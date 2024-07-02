@@ -28,7 +28,6 @@ import androidx.exifinterface.media.ExifInterface
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.launch
 import ru.tech.imageresizershrinker.core.domain.dispatchers.DispatchersHolder
 import ru.tech.imageresizershrinker.core.domain.image.ImageCompressor
 import ru.tech.imageresizershrinker.core.domain.image.ImageGetter
@@ -39,13 +38,13 @@ import ru.tech.imageresizershrinker.core.domain.image.model.ImageInfo
 import ru.tech.imageresizershrinker.core.domain.saving.FileController
 import ru.tech.imageresizershrinker.core.domain.saving.model.ImageSaveTarget
 import ru.tech.imageresizershrinker.core.domain.saving.model.SaveResult
+import ru.tech.imageresizershrinker.core.domain.utils.smartJob
 import ru.tech.imageresizershrinker.core.ui.utils.BaseViewModel
 import ru.tech.imageresizershrinker.core.ui.utils.helper.ImageUtils.createScaledBitmap
 import ru.tech.imageresizershrinker.core.ui.utils.state.update
 import ru.tech.imageresizershrinker.feature.compare.presentation.components.CompareType
 import javax.inject.Inject
 import kotlin.math.roundToInt
-import kotlin.random.Random
 
 @HiltViewModel
 class CompareViewModel @Inject constructor(
@@ -129,15 +128,15 @@ class CompareViewModel @Inject constructor(
         uri: Uri
     ): Bitmap? = imageGetter.getImage(uri.toString(), false)?.image
 
-    private var savingJob: Job? = null
+    private var savingJob: Job? by smartJob {
+        _isImageLoading.update { false }
+    }
 
     fun shareBitmap(
         percent: Float,
         imageFormat: ImageFormat,
         onComplete: () -> Unit
     ) {
-        _isImageLoading.value = false
-        savingJob?.cancel()
         savingJob = viewModelScope.launch(defaultDispatcher) {
             _isImageLoading.value = true
             getOverlappedImage(percent)?.let {
@@ -158,10 +157,9 @@ class CompareViewModel @Inject constructor(
     fun saveBitmap(
         percent: Float,
         imageFormat: ImageFormat,
+        oneTimeSaveLocationUri: String?,
         onComplete: (saveResult: SaveResult) -> Unit
     ) {
-        _isImageLoading.value = false
-        savingJob?.cancel()
         savingJob = viewModelScope.launch(defaultDispatcher) {
             _isImageLoading.value = true
             getOverlappedImage(percent)?.let { localBitmap ->
@@ -183,7 +181,9 @@ class CompareViewModel @Inject constructor(
                                     height = localBitmap.height
                                 )
                             )
-                        ), keepOriginalMetadata = false
+                        ),
+                        keepOriginalMetadata = false,
+                        oneTimeSaveLocationUri = oneTimeSaveLocationUri
                     )
                 )
                 _isImageLoading.value = false
@@ -198,7 +198,7 @@ class CompareViewModel @Inject constructor(
         val finalBitmap = overlay.copy(overlay.config, true).apply { setHasAlpha(true) }
         val canvas = android.graphics.Canvas(finalBitmap)
         val image = createScaledBitmap(canvas.width, canvas.height)
-        kotlin.runCatching {
+        runCatching {
             canvas.drawBitmap(
                 Bitmap.createBitmap(
                     image,
@@ -233,8 +233,6 @@ class CompareViewModel @Inject constructor(
         imageFormat: ImageFormat,
         onComplete: (Uri) -> Unit
     ) {
-        _isImageLoading.value = false
-        savingJob?.cancel()
         savingJob = viewModelScope.launch {
             _isImageLoading.value = true
             getOverlappedImage(percent)?.let {
@@ -244,8 +242,7 @@ class CompareViewModel @Inject constructor(
                         imageFormat = imageFormat,
                         width = it.width,
                         height = it.height
-                    ),
-                    name = Random.nextInt().toString()
+                    )
                 )
             }?.let { uri ->
                 onComplete(uri.toUri())

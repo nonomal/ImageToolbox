@@ -38,7 +38,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
-import dev.olshevski.navigation.reimagined.navigate
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import ru.tech.imageresizershrinker.core.resources.R
@@ -48,9 +47,7 @@ import ru.tech.imageresizershrinker.core.ui.theme.mixedContainer
 import ru.tech.imageresizershrinker.core.ui.theme.onMixedContainer
 import ru.tech.imageresizershrinker.core.ui.utils.confetti.LocalConfettiHostState
 import ru.tech.imageresizershrinker.core.ui.utils.helper.ContextUtils.isInstalledFromPlayStore
-import ru.tech.imageresizershrinker.core.ui.utils.helper.ContextUtils.openWriteableStream
-import ru.tech.imageresizershrinker.core.ui.utils.navigation.LocalNavController
-import ru.tech.imageresizershrinker.core.ui.utils.navigation.Screen
+import ru.tech.imageresizershrinker.core.ui.utils.helper.parseFileSaveResult
 import ru.tech.imageresizershrinker.core.ui.utils.provider.LocalContainerShape
 import ru.tech.imageresizershrinker.core.ui.utils.provider.ProvideContainerDefaults
 import ru.tech.imageresizershrinker.core.ui.widget.modifier.ContainerShapeDefaults
@@ -68,6 +65,8 @@ internal fun SettingItem(
         installedFromMarket: Boolean,
         onNoUpdates: () -> Unit
     ) -> Unit,
+    onNavigateToEasterEgg: () -> Unit,
+    onNavigateToSettings: () -> Boolean,
     updateAvailable: Boolean,
     color: Color = MaterialTheme.colorScheme.surface
 ) {
@@ -141,29 +140,20 @@ internal fun SettingItem(
             }
 
             Setting.Backup -> {
-                val writeDenied: (Throwable) -> Unit = {
-                    scope.launch {
-                        toastHostState.showError(context, it)
-                    }
-                }
                 BackupSettingItem(
                     createBackupFilename = viewModel::createBackupFilename,
                     createBackup = { uri ->
                         viewModel.createBackup(
-                            outputStream = context.openWriteableStream(uri, writeDenied),
-                            onSuccess = {
-                                scope.launch {
-                                    confettiHostState.showConfetti()
-                                }
-                                scope.launch {
-                                    toastHostState.showToast(
-                                        context.getString(
-                                            R.string.saved_to_without_filename,
-                                            ""
-                                        ),
-                                        Icons.Rounded.Save
-                                    )
-                                }
+                            uri = uri,
+                            onResult = { result ->
+                                context.parseFileSaveResult(
+                                    saveResult = result,
+                                    onSuccess = {
+                                        confettiHostState.showConfetti()
+                                    },
+                                    toastHostState = toastHostState,
+                                    scope = scope
+                                )
                             }
                         )
                     }
@@ -218,12 +208,9 @@ internal fun SettingItem(
                 var clicks by rememberSaveable {
                     mutableIntStateOf(0)
                 }
-                val navController = LocalNavController.current
                 LaunchedEffect(clicks) {
                     if (clicks >= 3) {
-                        if (navController.backstack.entries.lastOrNull()?.destination != Screen.EasterEgg) {
-                            navController.navigate(Screen.EasterEgg)
-                        }
+                        onNavigateToEasterEgg()
                         clicks = 0
                     }
 
@@ -577,11 +564,26 @@ internal fun SettingItem(
             }
 
             Setting.UseFullscreenSettings -> {
-                UseFullscreenSettingsSettingItem(onClick = viewModel::toggleUseFullscreenSettings)
+                UseFullscreenSettingsSettingItem(
+                    onClick = viewModel::toggleUseFullscreenSettings,
+                    onNavigateToSettings = onNavigateToSettings
+                )
             }
 
             Setting.DefaultDrawLineWidth -> {
                 DefaultDrawLineWidthSettingItem(onValueChange = viewModel::setDefaultDrawLineWidth)
+            }
+
+            Setting.OpenEditInsteadOfPreview -> {
+                OpenEditInsteadOfPreviewSettingItem(onClick = viewModel::toggleOpenEditInsteadOfPreview)
+            }
+
+            Setting.CanEnterPresetsByTextField -> {
+                CanEnterPresetsByTextFieldSettingItem(onClick = viewModel::toggleCanEnterPresetsByTextField)
+            }
+
+            Setting.ColorBlindScheme -> {
+                ColorBlindSchemeSettingItem(onValueChange = viewModel::setColorBlindScheme)
             }
         }
     }

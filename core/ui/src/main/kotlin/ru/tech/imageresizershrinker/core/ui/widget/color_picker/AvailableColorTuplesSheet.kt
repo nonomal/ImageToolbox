@@ -17,11 +17,11 @@
 
 package ru.tech.imageresizershrinker.core.ui.widget.color_picker
 
-import android.content.res.Configuration
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -34,14 +34,12 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
-import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -57,10 +55,8 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.windowsizeclass.WindowWidthSizeClass
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -69,9 +65,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -90,7 +87,7 @@ import ru.tech.imageresizershrinker.core.settings.presentation.provider.LocalSet
 import ru.tech.imageresizershrinker.core.ui.shapes.MaterialStarShape
 import ru.tech.imageresizershrinker.core.ui.theme.outlineVariant
 import ru.tech.imageresizershrinker.core.ui.utils.helper.ListUtils.nearestFor
-import ru.tech.imageresizershrinker.core.ui.utils.provider.LocalWindowSizeClass
+import ru.tech.imageresizershrinker.core.ui.utils.helper.isPortraitOrientationAsState
 import ru.tech.imageresizershrinker.core.ui.widget.buttons.EnhancedButton
 import ru.tech.imageresizershrinker.core.ui.widget.controls.EnhancedSliderItem
 import ru.tech.imageresizershrinker.core.ui.widget.modifier.alertDialogBorder
@@ -105,7 +102,8 @@ import ru.tech.imageresizershrinker.core.ui.widget.text.TitleItem
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AvailableColorTuplesSheet(
-    visible: MutableState<Boolean>,
+    visible: Boolean,
+    onDismiss: () -> Unit,
     colorTupleList: List<ColorTuple>,
     currentColorTuple: ColorTuple,
     openColorPicker: () -> Unit,
@@ -117,12 +115,14 @@ fun AvailableColorTuplesSheet(
     onToggleUseEmojiAsPrimaryColor: () -> Unit,
     onUpdateColorTuples: (List<ColorTuple>) -> Unit,
 ) {
-    val showEditColorPicker = rememberSaveable { mutableStateOf(false) }
+    var showEditColorPicker by rememberSaveable { mutableStateOf(false) }
 
     val settingsState = LocalSettingsState.current
     SimpleSheet(
         visible = visible,
-        endConfirmButtonPadding = 0.dp,
+        onDismiss = {
+            if (!it) onDismiss()
+        },
         dragHandle = {
             SimpleDragHandle {
                 Row(
@@ -201,7 +201,8 @@ fun AvailableColorTuplesSheet(
                                         borderColor = MaterialTheme.colorScheme.outlineVariant(0.2f),
                                         resultPadding = 0.dp
                                     )
-                                    .padding(3.dp),
+                                    .padding(3.dp)
+                                    .clip(CircleShape),
                                 backgroundColor = Color.Transparent
                             )
                             Spacer(modifier = Modifier.height(8.dp))
@@ -236,7 +237,7 @@ fun AvailableColorTuplesSheet(
                 EnhancedButton(
                     containerColor = MaterialTheme.colorScheme.secondaryContainer,
                     onClick = {
-                        showEditColorPicker.value = true
+                        showEditColorPicker = true
                     }
                 ) {
                     Icon(
@@ -247,8 +248,7 @@ fun AvailableColorTuplesSheet(
             }
         },
         sheetContent = {
-            val portrait =
-                LocalConfiguration.current.orientation != Configuration.ORIENTATION_LANDSCAPE || LocalWindowSizeClass.current.widthSizeClass == WindowWidthSizeClass.Compact
+            val isPortrait by isPortraitOrientationAsState()
 
             val isPickersEnabled = !settingsState.useEmojiAsPrimaryColor
 
@@ -309,12 +309,14 @@ fun AvailableColorTuplesSheet(
                 )
             }
             val defaultValues = @Composable {
-                val listState = rememberLazyListState()
+                val listState = rememberScrollState()
                 val defList = ColorTupleDefaults.defaultColorTuples
-                LaunchedEffect(visible.value, isPickersEnabled) {
+                val density = LocalDensity.current
+                val cellSize = 60.dp
+                LaunchedEffect(visible, isPickersEnabled) {
                     delay(100) // delay for sheet init
                     if (currentColorTuple in defList) {
-                        listState.animateScrollToItem(defList.indexOf(currentColorTuple))
+                        listState.scrollTo(defList.indexOf(currentColorTuple) * with(density) { cellSize.roundToPx() })
                     }
                 }
                 Column(
@@ -336,15 +338,16 @@ fun AvailableColorTuplesSheet(
                         )
                     }
                     Box {
-                        LazyRow(
-                            state = listState,
-                            contentPadding = PaddingValues(16.dp),
+                        Row(
+                            modifier = Modifier
+                                .horizontalScroll(listState)
+                                .padding(PaddingValues(16.dp)),
                             horizontalArrangement = Arrangement.spacedBy(4.dp)
                         ) {
-                            items(defList) { colorTuple ->
+                            defList.forEach { colorTuple ->
                                 ColorTuplePreview(
                                     isDefaultItem = true,
-                                    modifier = Modifier.size(60.dp),
+                                    modifier = Modifier.size(cellSize),
                                     colorTuple = colorTuple,
                                     appColorTuple = currentColorTuple,
                                     onClick = { onPickTheme(colorTuple) }
@@ -383,7 +386,7 @@ fun AvailableColorTuplesSheet(
                 horizontalArrangement = Arrangement.Center,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                if (!portrait) {
+                if (!isPortrait) {
                     Column(
                         modifier = Modifier
                             .verticalScroll(rememberScrollState())
@@ -407,7 +410,7 @@ fun AvailableColorTuplesSheet(
                     ),
                     verticalArrangement = Arrangement.spacedBy(4.dp, Alignment.CenterVertically)
                 ) {
-                    if (portrait) {
+                    if (isPortrait) {
                         item(
                             span = { GridItemSpan(maxLineSpan) }
                         ) {
@@ -460,7 +463,8 @@ fun AvailableColorTuplesSheet(
                                         resultPadding = 0.dp
                                     )
                                     .clickable { openColorPicker() }
-                                    .padding(3.dp),
+                                    .padding(3.dp)
+                                    .clip(CircleShape),
                                 backgroundColor = Color.Transparent
                             ) {
                                 Icon(
@@ -477,9 +481,7 @@ fun AvailableColorTuplesSheet(
         },
         confirmButton = {
             EnhancedButton(
-                onClick = {
-                    visible.value = false
-                }
+                onClick = onDismiss
             ) {
                 AutoSizeText(stringResource(R.string.close))
             }
@@ -487,6 +489,9 @@ fun AvailableColorTuplesSheet(
     )
     ColorTuplePicker(
         visible = showEditColorPicker,
+        onDismiss = {
+            showEditColorPicker = false
+        },
         colorTuple = currentColorTuple,
         onColorChange = {
             onUpdateColorTuples(colorTupleList + it - currentColorTuple)
@@ -495,9 +500,7 @@ fun AvailableColorTuplesSheet(
     )
     colorPicker(onUpdateColorTuples)
 
-    if (settingsState.isDynamicColors) {
-        visible.value = false
-    }
+    if (settingsState.isDynamicColors) onDismiss()
 }
 
 @Composable

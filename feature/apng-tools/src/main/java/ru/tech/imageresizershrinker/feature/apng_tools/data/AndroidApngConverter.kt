@@ -78,8 +78,7 @@ internal class AndroidApngConverter @Inject constructor(
                     height = frame.height,
                     imageFormat = imageFormat,
                     quality = quality
-                ),
-                name = "apng_image"
+                )
             )?.let { send(it) }
         }
     }
@@ -87,11 +86,17 @@ internal class AndroidApngConverter @Inject constructor(
     override suspend fun createApngFromImageUris(
         imageUris: List<String>,
         params: ApngParams,
+        onError: (Throwable) -> Unit,
         onProgress: () -> Unit
-    ): ByteArray = withContext(defaultDispatcher) {
+    ): ByteArray? = withContext(defaultDispatcher) {
         val out = ByteArrayOutputStream()
         val size = params.size ?: imageGetter.getImage(data = imageUris[0])!!.run {
             IntegerSize(width, height)
+        }
+
+        if (size.width <= 0 || size.height <= 0) {
+            onError(IllegalArgumentException("Width and height must be > 0"))
+            return@withContext null
         }
 
         val encoder = ApngEncoder(

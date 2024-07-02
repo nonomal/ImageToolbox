@@ -22,13 +22,13 @@ import android.net.Uri
 import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.core.net.toUri
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
 import ru.tech.imageresizershrinker.core.domain.dispatchers.DispatchersHolder
 import ru.tech.imageresizershrinker.core.domain.image.ImageCompressor
 import ru.tech.imageresizershrinker.core.domain.image.ShareProvider
@@ -39,13 +39,13 @@ import ru.tech.imageresizershrinker.core.domain.model.IntegerSize
 import ru.tech.imageresizershrinker.core.domain.saving.FileController
 import ru.tech.imageresizershrinker.core.domain.saving.model.ImageSaveTarget
 import ru.tech.imageresizershrinker.core.domain.saving.model.SaveResult
+import ru.tech.imageresizershrinker.core.domain.utils.smartJob
 import ru.tech.imageresizershrinker.core.ui.utils.BaseViewModel
 import ru.tech.imageresizershrinker.core.ui.utils.state.update
 import ru.tech.imageresizershrinker.feature.image_stitch.domain.CombiningParams
 import ru.tech.imageresizershrinker.feature.image_stitch.domain.ImageCombiner
 import ru.tech.imageresizershrinker.feature.image_stitch.domain.StitchMode
 import javax.inject.Inject
-import kotlin.random.Random
 
 @HiltViewModel
 class ImageStitchingViewModel @Inject constructor(
@@ -80,7 +80,10 @@ class ImageStitchingViewModel @Inject constructor(
     private val _imageByteSize: MutableState<Int?> = mutableStateOf(null)
     val imageByteSize by _imageByteSize
 
-    fun setMime(imageFormat: ImageFormat) {
+    private val _done: MutableState<Int> = mutableIntStateOf(0)
+    val done by _done
+
+    fun setImageFormat(imageFormat: ImageFormat) {
         _imageInfo.value = _imageInfo.value.copy(imageFormat = imageFormat)
         calculatePreview()
     }
@@ -92,14 +95,16 @@ class ImageStitchingViewModel @Inject constructor(
         }
     }
 
-    private var calculationPreviewJob: Job? = null
+    private var calculationPreviewJob: Job? by smartJob {
+        _isImageLoading.update { false }
+    }
 
     private fun calculatePreview() {
-        calculationPreviewJob?.cancel()
         calculationPreviewJob = viewModelScope.launch {
             delay(300L)
             _isImageLoading.value = true
             uris?.let { uris ->
+                registerChanges()
                 imageCombiner.createCombinedImagesPreview(
                     imageUris = uris.map { it.toString() },
                     combiningParams = combiningParams,
@@ -117,21 +122,26 @@ class ImageStitchingViewModel @Inject constructor(
         }
     }
 
-    private var savingJob: Job? = null
+    private var savingJob: Job? by smartJob {
+        _isSaving.update { false }
+    }
 
     fun saveBitmaps(
+        oneTimeSaveLocationUri: String?,
         onComplete: (result: SaveResult) -> Unit,
     ) {
-        _isSaving.value = false
-        savingJob?.cancel()
         savingJob = viewModelScope.launch(defaultDispatcher) {
             _isSaving.value = true
+            _done.value = 0
             imageCombiner.combineImages(
                 imageUris = uris?.map { it.toString() } ?: emptyList(),
                 combiningParams = combiningParams,
-                imageScale = imageScale
-            ).let { (image, ii) ->
-                val imageInfo = ii.copy(
+                imageScale = imageScale,
+                onProgress = {
+                    _done.value = it
+                }
+            ).let { (image, info) ->
+                val imageInfo = info.copy(
                     quality = imageInfo.quality,
                     imageFormat = imageInfo.imageFormat
                 )
@@ -147,8 +157,9 @@ class ImageStitchingViewModel @Inject constructor(
                                 imageInfo = imageInfo
                             )
                         ),
-                        keepOriginalMetadata = true
-                    )
+                        keepOriginalMetadata = true,
+                        oneTimeSaveLocationUri = oneTimeSaveLocationUri
+                    ).onSuccess(::registerSave)
                 )
             }
             _isSaving.value = false
@@ -156,13 +167,16 @@ class ImageStitchingViewModel @Inject constructor(
     }
 
     fun shareBitmap(onComplete: () -> Unit) {
-        _isSaving.value = false
-        viewModelScope.launch {
+        savingJob = viewModelScope.launch {
             _isSaving.value = true
+            _done.value = 0
             imageCombiner.combineImages(
                 imageUris = uris?.map { it.toString() } ?: emptyList(),
                 combiningParams = combiningParams,
-                imageScale = imageScale
+                imageScale = imageScale,
+                onProgress = {
+                    _done.value = it
+                }
             ).let {
                 it.copy(
                     second = it.second.copy(
@@ -178,9 +192,6 @@ class ImageStitchingViewModel @Inject constructor(
                 )
             }
             _isSaving.value = false
-        }.also {
-            savingJob?.cancel()
-            savingJob = it
         }
     }
 
@@ -197,6 +208,7 @@ class ImageStitchingViewModel @Inject constructor(
 
     fun updateImageScale(newScale: Float) {
         _imageScale.value = newScale
+        registerChanges()
     }
 
     fun setStitchMode(value: StitchMode) {
@@ -258,14 +270,16 @@ class ImageStitchingViewModel @Inject constructor(
     }
 
     fun cacheCurrentImage(onComplete: (Uri) -> Unit) {
-        _isSaving.value = false
-        savingJob?.cancel()
         savingJob = viewModelScope.launch {
             _isSaving.value = true
+            _done.value = 0
             imageCombiner.combineImages(
                 imageUris = uris?.map { it.toString() } ?: emptyList(),
                 combiningParams = combiningParams,
-                imageScale = imageScale
+                imageScale = imageScale,
+                onProgress = {
+                    _done.value = it
+                }
             ).let {
                 it.copy(
                     second = it.second.copy(
@@ -276,8 +290,7 @@ class ImageStitchingViewModel @Inject constructor(
             }.let { (image, imageInfo) ->
                 shareProvider.cacheImage(
                     image = image,
-                    imageInfo = imageInfo,
-                    name = Random.nextInt().toString()
+                    imageInfo = imageInfo
                 )?.let { uri ->
                     onComplete(uri.toUri())
                 }

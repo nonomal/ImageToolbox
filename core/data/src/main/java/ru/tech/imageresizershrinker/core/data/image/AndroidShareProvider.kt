@@ -25,20 +25,21 @@ import android.webkit.MimeTypeMap
 import androidx.core.content.FileProvider
 import androidx.core.net.toUri
 import androidx.exifinterface.media.ExifInterface
-import com.t8rin.logger.makeLog
 import dagger.Lazy
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.withContext
+import ru.tech.imageresizershrinker.core.data.saving.FileWriteable
 import ru.tech.imageresizershrinker.core.domain.dispatchers.DispatchersHolder
 import ru.tech.imageresizershrinker.core.domain.image.ImageCompressor
 import ru.tech.imageresizershrinker.core.domain.image.ImageGetter
 import ru.tech.imageresizershrinker.core.domain.image.ShareProvider
 import ru.tech.imageresizershrinker.core.domain.image.model.ImageInfo
 import ru.tech.imageresizershrinker.core.domain.saving.ImageFilenameProvider
+import ru.tech.imageresizershrinker.core.domain.saving.Writeable
 import ru.tech.imageresizershrinker.core.domain.saving.model.ImageSaveTarget
+import ru.tech.imageresizershrinker.core.domain.saving.use
 import ru.tech.imageresizershrinker.core.resources.R
 import java.io.File
-import java.io.FileOutputStream
 import javax.inject.Inject
 
 internal class AndroidShareProvider @Inject constructor(
@@ -54,61 +55,47 @@ internal class AndroidShareProvider @Inject constructor(
         imageLoader: suspend (String) -> Pair<Bitmap, ImageInfo>?,
         onProgressChange: (Int) -> Unit
     ) = withContext(ioDispatcher) {
-        var cnt = 0
-        val uriList: MutableList<Uri> = mutableListOf()
-        uris.forEach { uri ->
+        val cachedUris = uris.mapIndexedNotNull { index, uri ->
             imageLoader(uri)?.let { (image, imageInfo) ->
                 cacheImage(
                     image = image,
                     imageInfo = imageInfo
-                )?.let { uri ->
-                    cnt += 1
-                    uriList.add(uri.toUri())
+                )?.also {
+                    onProgressChange(index + 1)
                 }
             }
-            onProgressChange(cnt)
         }
         onProgressChange(-1)
-        shareImageUris(uriList)
+        shareUris(cachedUris)
     }
 
     override suspend fun cacheImage(
         image: Bitmap,
-        imageInfo: ImageInfo,
-        name: String
+        imageInfo: ImageInfo
     ): String? = withContext(ioDispatcher) {
-        val imagesFolder = File(context.cacheDir, "images")
-
         runCatching {
-            imagesFolder.mkdirs()
             val saveTarget = ImageSaveTarget<ExifInterface>(
                 imageInfo = imageInfo,
-                originalUri = "share",
+                originalUri = imageInfo.originalUri ?: "share",
                 sequenceNumber = null,
                 data = byteArrayOf()
             )
 
-            val file =
-                File(imagesFolder, imageFilenameProvider.get().constructImageFilename(saveTarget))
-            FileOutputStream(file).use {
-                it.write(imageCompressor.compressAndTransform(image, imageInfo))
-            }
-            FileProvider.getUriForFile(context, context.getString(R.string.file_provider), file)
-                .also {
-                    context.grantUriPermission(
-                        context.packageName,
-                        it,
-                        Intent.FLAG_GRANT_WRITE_URI_PERMISSION or Intent.FLAG_GRANT_READ_URI_PERMISSION
-                    )
-                }
-        }.getOrNull()?.toString()
+            val filename = imageFilenameProvider.get().constructImageFilename(saveTarget)
+            val byteArray = imageCompressor.compressAndTransform(image, imageInfo)
+
+            cacheByteArray(
+                byteArray = byteArray,
+                filename = filename
+            )
+
+        }.getOrNull()
     }
 
     override suspend fun shareImage(
         imageInfo: ImageInfo,
         image: Bitmap,
-        onComplete: () -> Unit,
-        name: String
+        onComplete: () -> Unit
     ) = withContext(ioDispatcher) {
         cacheImage(
             image = image,
@@ -116,7 +103,8 @@ internal class AndroidShareProvider @Inject constructor(
         )?.let {
             shareUri(
                 uri = it,
-                type = imageInfo.imageFormat.type
+                type = imageInfo.imageFormat.mimeType,
+                onComplete = onComplete
             )
         }
         onComplete()
@@ -124,7 +112,8 @@ internal class AndroidShareProvider @Inject constructor(
 
     override suspend fun shareUri(
         uri: String,
-        type: String?
+        type: String?,
+        onComplete: () -> Unit
     ) = withContext(defaultDispatcher) {
         val sendIntent = Intent(Intent.ACTION_SEND).apply {
             putExtra(Intent.EXTRA_STREAM, uri.toUri())
@@ -138,6 +127,7 @@ internal class AndroidShareProvider @Inject constructor(
         val shareIntent = Intent.createChooser(sendIntent, context.getString(R.string.share))
         shareIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         context.startActivity(shareIntent)
+        onComplete()
     }
 
     override suspend fun shareUris(
@@ -167,22 +157,10 @@ internal class AndroidShareProvider @Inject constructor(
         byteArray: ByteArray,
         filename: String
     ): String? = withContext(ioDispatcher) {
-        val imagesFolder = File(context.cacheDir, "files")
-
-        runCatching {
-            imagesFolder.mkdirs()
-            val file = File(imagesFolder, filename)
-            FileOutputStream(file).use {
-                it.write(byteArray)
-            }
-            FileProvider.getUriForFile(
-                context,
-                context.getString(R.string.file_provider),
-                file
-            )
-        }.onFailure {
-            it.makeLog()
-        }.getOrNull()?.toString()
+        cacheData(
+            writeData = { it.writeBytes(byteArray) },
+            filename = filename,
+        )
     }
 
     override suspend fun shareByteArray(
@@ -190,8 +168,47 @@ internal class AndroidShareProvider @Inject constructor(
         filename: String,
         onComplete: () -> Unit
     ) = withContext(ioDispatcher) {
-        cacheByteArray(
-            byteArray = byteArray,
+        shareData(
+            writeData = { it.writeBytes(byteArray) },
+            filename = filename,
+            onComplete = onComplete
+        )
+        onComplete()
+    }
+
+    override suspend fun cacheData(
+        writeData: suspend (Writeable) -> Unit,
+        filename: String
+    ): String? = withContext(ioDispatcher) {
+        val imagesFolder = File(context.cacheDir, "files")
+
+        runCatching {
+            imagesFolder.mkdirs()
+            val file = File(imagesFolder, filename)
+            FileWriteable(file).use {
+                writeData(it)
+            }
+
+            FileProvider.getUriForFile(context, context.getString(R.string.file_provider), file)
+                .also { uri ->
+                    runCatching {
+                        context.grantUriPermission(
+                            context.packageName,
+                            uri,
+                            Intent.FLAG_GRANT_WRITE_URI_PERMISSION or Intent.FLAG_GRANT_READ_URI_PERMISSION
+                        )
+                    }
+                }
+        }.getOrNull()?.toString()
+    }
+
+    override suspend fun shareData(
+        writeData: suspend (Writeable) -> Unit,
+        filename: String,
+        onComplete: () -> Unit
+    ) = withContext(ioDispatcher) {
+        cacheData(
+            writeData = writeData,
             filename = filename
         )?.let {
             shareUri(
@@ -199,9 +216,26 @@ internal class AndroidShareProvider @Inject constructor(
                 type = MimeTypeMap.getSingleton()
                     .getMimeTypeFromExtension(
                         imageGetter.getExtension(it)
-                    ) ?: "*/*"
+                    ) ?: "*/*",
+                onComplete = onComplete
             )
         }
+        onComplete()
+    }
+
+    override fun shareText(
+        value: String,
+        onComplete: () -> Unit
+    ) {
+        val sendIntent = Intent().apply {
+            action = Intent.ACTION_SEND
+            type = "text/plain"
+            putExtra(Intent.EXTRA_TEXT, value)
+        }
+        val shareIntent = Intent.createChooser(sendIntent, context.getString(R.string.share))
+        shareIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        context.startActivity(shareIntent)
+
         onComplete()
     }
 

@@ -22,9 +22,10 @@ import android.graphics.PorterDuff
 import android.graphics.RectF
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
+import androidx.core.graphics.BitmapCompat
 import androidx.core.graphics.applyCanvas
 import com.awxkee.aire.Aire
-import com.awxkee.aire.BitmapScaleMode
+import com.awxkee.aire.ResizeFunction
 import com.t8rin.logger.makeLog
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.launchIn
@@ -38,6 +39,7 @@ import ru.tech.imageresizershrinker.core.domain.image.ImageTransformer
 import ru.tech.imageresizershrinker.core.domain.image.model.ImageScaleMode
 import ru.tech.imageresizershrinker.core.domain.image.model.ResizeAnchor
 import ru.tech.imageresizershrinker.core.domain.image.model.ResizeType
+import ru.tech.imageresizershrinker.core.domain.image.model.ScaleColorSpace
 import ru.tech.imageresizershrinker.core.domain.model.IntegerSize
 import ru.tech.imageresizershrinker.core.filters.domain.FilterProvider
 import ru.tech.imageresizershrinker.core.filters.domain.model.Filter
@@ -45,6 +47,7 @@ import ru.tech.imageresizershrinker.core.settings.domain.SettingsProvider
 import javax.inject.Inject
 import kotlin.math.max
 import kotlin.math.roundToInt
+import com.awxkee.aire.ScaleColorSpace as AireScaleColorSpace
 
 internal class AndroidImageScaler @Inject constructor(
     settingsProvider: SettingsProvider,
@@ -124,7 +127,7 @@ internal class AndroidImageScaler @Inject constructor(
             image = image,
             height = height,
             width = width,
-            imageScaleMode = ImageScaleMode.Bicubic
+            imageScaleMode = ImageScaleMode.Bicubic()
         )
     }
 
@@ -224,6 +227,14 @@ internal class AndroidImageScaler @Inject constructor(
     ): Bitmap = withContext(defaultDispatcher) {
         if (width == image.width && height == image.height) return@withContext image
 
+        if (imageScaleMode is ImageScaleMode.Base) {
+            return@withContext if (width < image.width && height < image.width) {
+                BitmapCompat.createScaledBitmap(image, width, height, null, true)
+            } else {
+                Bitmap.createScaledBitmap(image, width, height, true)
+            }
+        }
+
         val mode = imageScaleMode.takeIf {
             it != ImageScaleMode.NotPresent && it.value >= 0
         } ?: defaultImageScaleMode
@@ -232,11 +243,77 @@ internal class AndroidImageScaler @Inject constructor(
             bitmap = image.toSoftware(),
             dstWidth = width,
             dstHeight = height,
-            scaleMode = BitmapScaleMode.entries.firstOrNull {
-                it.ordinal == mode.value
-            } ?: BitmapScaleMode.Bilinear,
-            antialias = true
+            scaleMode = mode.toResizeFunction(),
+            colorSpace = mode.scaleColorSpace.toColorSpace()
         )
+    }
+
+    private fun ImageScaleMode.toResizeFunction(): ResizeFunction = when (this) {
+        ImageScaleMode.NotPresent,
+        ImageScaleMode.Base -> ResizeFunction.Bilinear
+
+        is ImageScaleMode.Bilinear -> ResizeFunction.Bilinear
+        is ImageScaleMode.Nearest -> ResizeFunction.Nearest
+        is ImageScaleMode.Cubic -> ResizeFunction.Cubic
+        is ImageScaleMode.Mitchell -> ResizeFunction.MitchellNetravalli
+        is ImageScaleMode.Catmull -> ResizeFunction.CatmullRom
+        is ImageScaleMode.Hermite -> ResizeFunction.Hermite
+        is ImageScaleMode.BSpline -> ResizeFunction.BSpline
+        is ImageScaleMode.Hann -> ResizeFunction.Hann
+        is ImageScaleMode.Bicubic -> ResizeFunction.Bicubic
+        is ImageScaleMode.Hamming -> ResizeFunction.Hamming
+        is ImageScaleMode.Hanning -> ResizeFunction.Hanning
+        is ImageScaleMode.Blackman -> ResizeFunction.Blackman
+        is ImageScaleMode.Welch -> ResizeFunction.Welch
+        is ImageScaleMode.Quadric -> ResizeFunction.Quadric
+        is ImageScaleMode.Gaussian -> ResizeFunction.Gaussian
+        is ImageScaleMode.Sphinx -> ResizeFunction.Sphinx
+        is ImageScaleMode.Bartlett -> ResizeFunction.Bartlett
+        is ImageScaleMode.Robidoux -> ResizeFunction.Robidoux
+        is ImageScaleMode.RobidouxSharp -> ResizeFunction.RobidouxSharp
+        is ImageScaleMode.Spline16 -> ResizeFunction.Spline16
+        is ImageScaleMode.Spline36 -> ResizeFunction.Spline36
+        is ImageScaleMode.Spline64 -> ResizeFunction.Spline64
+        is ImageScaleMode.Kaiser -> ResizeFunction.Kaiser
+        is ImageScaleMode.BartlettHann -> ResizeFunction.BartlettHann
+        is ImageScaleMode.Box -> ResizeFunction.Box
+        is ImageScaleMode.Bohman -> ResizeFunction.Bohman
+        is ImageScaleMode.Lanczos2 -> ResizeFunction.Lanczos2
+        is ImageScaleMode.Lanczos3 -> ResizeFunction.Lanczos3
+        is ImageScaleMode.Lanczos4 -> ResizeFunction.Lanczos4
+        is ImageScaleMode.Lanczos2Jinc -> ResizeFunction.Lanczos2Jinc
+        is ImageScaleMode.Lanczos3Jinc -> ResizeFunction.Lanczos3Jinc
+        is ImageScaleMode.Lanczos4Jinc -> ResizeFunction.Lanczos4Jinc
+        is ImageScaleMode.EwaHanning -> ResizeFunction.EwaHanning
+        is ImageScaleMode.EwaRobidoux -> ResizeFunction.EwaRobidoux
+        is ImageScaleMode.EwaBlackman -> ResizeFunction.EwaBlackman
+        is ImageScaleMode.EwaQuadric -> ResizeFunction.EwaQuadric
+        is ImageScaleMode.EwaRobidouxSharp -> ResizeFunction.EwaRobidouxSharp
+        is ImageScaleMode.EwaLanczos3Jinc -> ResizeFunction.EwaLanczos3Jinc
+        is ImageScaleMode.Ginseng -> ResizeFunction.Ginseng
+        is ImageScaleMode.EwaGinseng -> ResizeFunction.EwaGinseng
+        is ImageScaleMode.EwaLanczosSharp -> ResizeFunction.EwaLanczosSharp
+        is ImageScaleMode.EwaLanczos4Sharpest -> ResizeFunction.EwaLanczos4Sharpest
+        is ImageScaleMode.EwaLanczosSoft -> ResizeFunction.EwaLanczosSoft
+        is ImageScaleMode.HaasnSoft -> ResizeFunction.HaasnSoft
+        is ImageScaleMode.Lagrange2 -> ResizeFunction.Lagrange2
+        is ImageScaleMode.Lagrange3 -> ResizeFunction.Lagrange3
+        is ImageScaleMode.Lanczos6 -> ResizeFunction.Lanczos6
+        is ImageScaleMode.Lanczos6Jinc -> ResizeFunction.Lanczos6Jinc
+    }
+
+    private fun ScaleColorSpace.toColorSpace(): AireScaleColorSpace = when (this) {
+        ScaleColorSpace.LAB -> AireScaleColorSpace.LAB
+        ScaleColorSpace.Linear -> AireScaleColorSpace.LINEAR
+        ScaleColorSpace.SRGB -> AireScaleColorSpace.SRGB
+        ScaleColorSpace.LUV -> AireScaleColorSpace.LUV
+        ScaleColorSpace.Sigmoidal -> AireScaleColorSpace.SIGMOIDAL
+        ScaleColorSpace.XYZ -> AireScaleColorSpace.XYZ
+        ScaleColorSpace.F32Gamma22 -> AireScaleColorSpace.LINEAR_F32_GAMMA_2_2
+        ScaleColorSpace.F32Gamma28 -> AireScaleColorSpace.LINEAR_F32_GAMMA_2_8
+        ScaleColorSpace.F32Rec709 -> AireScaleColorSpace.LINEAR_F32_REC709
+        ScaleColorSpace.F32sRGB -> AireScaleColorSpace.LINEAR_F32_SRGB
+        ScaleColorSpace.LCH -> AireScaleColorSpace.LCH
     }
 
     private suspend fun flexibleResize(
@@ -273,6 +350,12 @@ internal class AndroidImageScaler @Inject constructor(
                 if (width >= height) {
                     scaleByWidth()
                 } else scaleByHeight()
+            }
+
+            ResizeAnchor.Min -> {
+                if (width >= height) {
+                    scaleByHeight()
+                } else scaleByWidth()
             }
 
             ResizeAnchor.Width -> scaleByWidth()

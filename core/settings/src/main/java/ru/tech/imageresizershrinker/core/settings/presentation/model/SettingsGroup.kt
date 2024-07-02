@@ -40,7 +40,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import ru.tech.imageresizershrinker.core.resources.R
 import ru.tech.imageresizershrinker.core.resources.icons.Exif
 import ru.tech.imageresizershrinker.core.resources.icons.Firebase
-import ru.tech.imageresizershrinker.core.resources.icons.FolderOpen
+import ru.tech.imageresizershrinker.core.resources.icons.FolderOpened
 import ru.tech.imageresizershrinker.core.resources.icons.ImageSearch
 import ru.tech.imageresizershrinker.core.resources.icons.LabelPercent
 import ru.tech.imageresizershrinker.core.resources.icons.Shadow
@@ -79,6 +79,7 @@ sealed class SettingsGroup(
         icon = Icons.TwoTone.Palette,
         titleId = R.string.secondary_customization,
         settingsList = listOf(
+            Setting.ColorBlindScheme,
             Setting.BorderThickness,
             Setting.SwitchType,
             Setting.DragHandleWidth,
@@ -136,7 +137,8 @@ sealed class SettingsGroup(
         icon = Icons.Rounded.LabelPercent,
         titleId = R.string.presets,
         settingsList = listOf(
-            Setting.Presets
+            Setting.Presets,
+            Setting.CanEnterPresetsByTextField
         ),
         initialState = false
     )
@@ -171,7 +173,7 @@ sealed class SettingsGroup(
     )
 
     data object Folder : SettingsGroup(
-        icon = Icons.Rounded.FolderOpen,
+        icon = Icons.Rounded.FolderOpened,
         titleId = R.string.folder,
         settingsList = listOf(
             Setting.SavingFolder
@@ -318,6 +320,7 @@ sealed class SettingsGroup(
             Setting.SkipFilePicking,
             Setting.ShowSettingsInLandscape,
             Setting.UseFullscreenSettings,
+            Setting.OpenEditInsteadOfPreview,
             Setting.GeneratePreviews
         ),
         initialState = false

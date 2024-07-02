@@ -24,6 +24,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.material3.BasicAlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -31,16 +32,23 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.unit.dp
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun LoadingDialog(
-    canCancel: Boolean = true,
-    onCancelLoading: () -> Unit = {}
+    onCancelLoading: () -> Unit = {},
+    canCancel: Boolean = true
 ) {
     var showWantDismissDialog by remember(canCancel) { mutableStateOf(false) }
-    BasicAlertDialog(onDismissRequest = { showWantDismissDialog = canCancel }) {
+    BasicAlertDialog(
+        onDismissRequest = { showWantDismissDialog = canCancel }
+    ) {
+        val focus = LocalFocusManager.current
+        LaunchedEffect(focus) {
+            focus.clearFocus()
+        }
         Box(
             modifier = Modifier
                 .fillMaxSize()
@@ -67,11 +75,17 @@ fun LoadingDialog(
 fun LoadingDialog(
     done: Int,
     left: Int,
+    onCancelLoading: () -> Unit,
     canCancel: Boolean = true,
-    onCancelLoading: () -> Unit
 ) {
     var showWantDismissDialog by remember(canCancel) { mutableStateOf(false) }
-    BasicAlertDialog(onDismissRequest = { showWantDismissDialog = canCancel }) {
+    BasicAlertDialog(
+        onDismissRequest = { showWantDismissDialog = canCancel }
+    ) {
+        val focus = LocalFocusManager.current
+        LaunchedEffect(focus) {
+            focus.clearFocus()
+        }
         Box(
             Modifier
                 .fillMaxSize()

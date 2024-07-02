@@ -108,7 +108,8 @@ sealed class UiFilter<T>(
                     UiSpacePortalFilter(),
                     UiRedSwirlFilter(),
                     UiDigitalCodeFilter(),
-                    UiOldTvFilter()
+                    UiOldTvFilter(),
+                    UiEqualizeHistogramFilter()
                 ),
                 listOf(
                     UiHueFilter(),
@@ -141,12 +142,25 @@ sealed class UiFilter<T>(
                     UiAcesHillToneMappingFilter(),
                     UiHableFilmicToneMappingFilter(),
                     UiHejlBurgessToneMappingFilter(),
+                    UiEqualizeHistogramAdaptiveFilter(),
+                    UiEqualizeHistogramAdaptiveLUVFilter(),
+                    UiEqualizeHistogramAdaptiveLABFilter(),
+                    UiEqualizeHistogramAdaptiveHSLFilter(),
+                    UiEqualizeHistogramAdaptiveHSVFilter(),
+                    UiEqualizeHistogramHSVFilter(),
+                    UiClaheHSVFilter(),
+                    UiClaheHSLFilter(),
+                    UiClaheFilter(),
+                    UiClaheLABFilter(),
+                    UiClaheLUVFilter(),
                     UiMobiusFilter(),
                     UiAldridgeFilter(),
                     UiUchimuraFilter(),
                     UiDragoFilter()
                 ),
                 listOf(
+                    UiNoiseFilter(),
+                    UiAnisotropicDiffusionFilter(),
                     UiSharpenFilter(),
                     UiUnsharpFilter(),
                     UiGrainFilter(),
@@ -159,6 +173,7 @@ sealed class UiFilter<T>(
                     UiDilationFilter(),
                     UiOpacityFilter(),
                     UiSideFadeFilter(),
+                    UiCropToContentFilter(),
                     UiToonFilter(),
                     UiSmoothToonFilter(),
                     UiSketchFilter(),
@@ -184,17 +199,25 @@ sealed class UiFilter<T>(
                     UiFastBlurFilter(),
                     UiZoomBlurFilter(),
                     UiMotionBlurFilter(),
-                    UiAnisotropicDiffusionFilter(),
                     UiFastBilaterialBlurFilter(),
                     UiPoissonBlurFilter(),
                     UiMedianBlurFilter(),
                     UiBokehFilter(),
                     UiFastGaussianBlur2DFilter(),
                     UiFastGaussianBlur3DFilter(),
-                    UiFastGaussianBlur4DFilter()
+                    UiFastGaussianBlur4DFilter(),
+                    UiLinearBoxBlurFilter(),
+                    UiLinearTentBlurFilter(),
+                    UiLinearGaussianBoxBlurFilter(),
+                    UiLinearStackBlurFilter(),
+                    UiGaussianBoxBlurFilter(),
+                    UiLinearFastGaussianNextFilter(),
+                    UiLinearFastGaussianFilter(),
+                    UiLinearGaussianFilter()
                 ),
                 listOf(
                     UiCrystallizeFilter(),
+                    UiEqualizeHistogramPixelationFilter(),
                     UiPixelationFilter(),
                     UiEnhancedPixelationFilter(),
                     UiDiamondPixelationFilter(),
@@ -214,7 +237,6 @@ sealed class UiFilter<T>(
                     UiPerlinDistortionFilter(),
                     UiAnaglyphFilter(),
                     UiHorizontalWindStaggerFilter(),
-                    UiNoiseFilter(),
                     UiSwirlDistortionFilter(),
                     UiBulgeDistortionFilter(),
                     UiSphereRefractionFilter(),
@@ -261,6 +283,7 @@ fun Filter<Bitmap, *>.toUiFilter(): UiFilter<*> = sealedValues.first {
     if (parameters.isNotEmpty()) callBy(mapOf(parameters[0] to value))
     else callBy(emptyMap())
 }
+
 
 infix fun Int.paramTo(valueRange: ClosedFloatingPointRange<Float>) = FilterParam(
     title = this,

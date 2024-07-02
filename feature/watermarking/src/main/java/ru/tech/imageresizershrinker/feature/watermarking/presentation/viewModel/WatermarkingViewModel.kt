@@ -26,13 +26,11 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.core.net.toUri
 import androidx.exifinterface.media.ExifInterface
 import androidx.lifecycle.viewModelScope
-import coil.size.Size
-import coil.size.pxOrElse
 import coil.transform.Transformation
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import ru.tech.imageresizershrinker.core.data.utils.toCoil
 import ru.tech.imageresizershrinker.core.domain.dispatchers.DispatchersHolder
 import ru.tech.imageresizershrinker.core.domain.image.ImageCompressor
 import ru.tech.imageresizershrinker.core.domain.image.ImageGetter
@@ -44,12 +42,14 @@ import ru.tech.imageresizershrinker.core.domain.image.model.ResizeType
 import ru.tech.imageresizershrinker.core.domain.saving.FileController
 import ru.tech.imageresizershrinker.core.domain.saving.model.ImageSaveTarget
 import ru.tech.imageresizershrinker.core.domain.saving.model.SaveResult
+import ru.tech.imageresizershrinker.core.domain.saving.model.onSuccess
+import ru.tech.imageresizershrinker.core.domain.transformation.GenericTransformation
+import ru.tech.imageresizershrinker.core.domain.utils.smartJob
 import ru.tech.imageresizershrinker.core.ui.utils.BaseViewModel
 import ru.tech.imageresizershrinker.core.ui.utils.state.update
 import ru.tech.imageresizershrinker.feature.watermarking.domain.WatermarkApplier
 import ru.tech.imageresizershrinker.feature.watermarking.domain.WatermarkParams
 import javax.inject.Inject
-import kotlin.random.Random
 
 
 @HiltViewModel
@@ -117,13 +117,16 @@ class WatermarkingViewModel @Inject constructor(
         }
     }
 
-    private var savingJob: Job? = null
+    private var savingJob: Job? by smartJob {
+        _isSaving.update { false }
+    }
 
     fun saveBitmaps(
-        onResult: (List<SaveResult>, String) -> Unit
-    ) = viewModelScope.launch {
-        _left.value = -1
-        withContext(defaultDispatcher) {
+        oneTimeSaveLocationUri: String?,
+        onResult: (List<SaveResult>) -> Unit
+    ) {
+        savingJob = viewModelScope.launch(defaultDispatcher) {
+            _left.value = -1
             _isSaving.value = true
             val results = mutableListOf<SaveResult>()
             _done.value = 0
@@ -149,7 +152,9 @@ class WatermarkingViewModel @Inject constructor(
                                     image = localBitmap,
                                     imageInfo = imageInfo
                                 )
-                            ), keepOriginalMetadata = keepExif
+                            ),
+                            keepOriginalMetadata = keepExif,
+                            oneTimeSaveLocationUri = oneTimeSaveLocationUri
                         )
                     )
 
@@ -159,13 +164,9 @@ class WatermarkingViewModel @Inject constructor(
 
                 _done.value += 1
             }
-            onResult(results, fileController.savingPath)
+            onResult(results.onSuccess(::registerSave))
             _isSaving.value = false
         }
-    }.also {
-        _isSaving.value = false
-        savingJob?.cancel()
-        savingJob = it
     }
 
     private suspend fun getWatermarkedBitmap(
@@ -182,8 +183,6 @@ class WatermarkingViewModel @Inject constructor(
     }
 
     fun shareBitmaps(onComplete: () -> Unit) {
-        savingJob?.cancel()
-        _isSaving.value = false
         _left.value = -1
         savingJob = viewModelScope.launch {
             _isSaving.value = true
@@ -227,10 +226,12 @@ class WatermarkingViewModel @Inject constructor(
 
     fun setImageFormat(imageFormat: ImageFormat) {
         _imageFormat.update { imageFormat }
+        registerChanges()
     }
 
     fun updateWatermarkParams(watermarkParams: WatermarkParams) {
         _watermarkParams.update { watermarkParams }
+        registerChanges()
         checkBitmapAndUpdate()
     }
 
@@ -258,20 +259,18 @@ class WatermarkingViewModel @Inject constructor(
     }
 
     fun updateUrisSilently(removedUri: Uri) {
-        viewModelScope.launch {
-            withContext(defaultDispatcher) {
-                if (selectedUri == removedUri) {
-                    val index = uris.indexOf(removedUri)
-                    if (index == 0) {
-                        uris.getOrNull(1)?.let(::setUri)
-                    } else {
-                        uris.getOrNull(index - 1)?.let(::setUri)
-                    }
+        viewModelScope.launch(defaultDispatcher) {
+            if (selectedUri == removedUri) {
+                val index = uris.indexOf(removedUri)
+                if (index == 0) {
+                    uris.getOrNull(1)?.let(::setUri)
+                } else {
+                    uris.getOrNull(index - 1)?.let(::setUri)
                 }
-                _uris.update {
-                    it.toMutableList().apply {
-                        remove(removedUri)
-                    }
+            }
+            _uris.update {
+                it.toMutableList().apply {
+                    remove(removedUri)
                 }
             }
         }
@@ -287,24 +286,18 @@ class WatermarkingViewModel @Inject constructor(
 
     fun toggleKeepExif(value: Boolean) {
         _keepExif.update { value }
+        registerChanges()
     }
 
     fun getWatermarkTransformation(): Transformation {
-        return object : Transformation {
-            override val cacheKey: String
-                get() = watermarkParams.hashCode().toString()
-
-            override suspend fun transform(
-                input: Bitmap,
-                size: Size
-            ): Bitmap = imageScaler.scaleImage(
+        return GenericTransformation<Bitmap>(watermarkParams) { input, size ->
+            imageScaler.scaleImage(
                 getWatermarkedBitmap(input) ?: input,
-                size.width.pxOrElse { 1 },
-                size.height.pxOrElse { 1 },
+                size.width,
+                size.height,
                 resizeType = ResizeType.Flexible
             )
-
-        }
+        }.toCoil()
     }
 
     fun cacheCurrentImage(onComplete: (Uri) -> Unit) {
@@ -324,12 +317,44 @@ class WatermarkingViewModel @Inject constructor(
             }?.let { (image, imageInfo) ->
                 shareProvider.cacheImage(
                     image = image,
-                    imageInfo = imageInfo.copy(originalUri = selectedUri.toString()),
-                    name = Random.nextInt().toString()
+                    imageInfo = imageInfo.copy(originalUri = selectedUri.toString())
                 )?.let { uri ->
                     onComplete(uri.toUri())
                 }
             }
+            _isSaving.value = false
+        }
+    }
+
+    fun cacheImages(
+        onComplete: (List<Uri>) -> Unit
+    ) {
+        savingJob = viewModelScope.launch {
+            _isSaving.value = true
+            _done.value = 0
+            _left.value = uris.size
+            val list = mutableListOf<Uri>()
+            uris.forEach { uri ->
+                getWatermarkedBitmap(
+                    data = uri,
+                    originalSize = true
+                )?.let {
+                    it to ImageInfo(
+                        width = it.width,
+                        height = it.height,
+                        imageFormat = imageFormat
+                    )
+                }?.let { (image, imageInfo) ->
+                    shareProvider.cacheImage(
+                        image = image,
+                        imageInfo = imageInfo.copy(originalUri = uri.toString())
+                    )?.let { uri ->
+                        list.add(uri.toUri())
+                    }
+                }
+                _done.value += 1
+            }
+            onComplete(list)
             _isSaving.value = false
         }
     }

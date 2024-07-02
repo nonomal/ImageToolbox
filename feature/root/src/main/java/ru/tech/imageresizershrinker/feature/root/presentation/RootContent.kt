@@ -20,7 +20,6 @@ package ru.tech.imageresizershrinker.feature.root.presentation
 import android.content.ClipData
 import android.content.res.Configuration
 import android.os.Build
-import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.fillMaxSize
@@ -29,7 +28,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
-import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -43,16 +41,16 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.core.view.WindowInsetsControllerCompat
 import com.google.accompanist.systemuicontroller.rememberSystemUiController
-import dev.olshevski.navigation.reimagined.NavAction
 import dev.olshevski.navigation.reimagined.navigate
 import kotlinx.coroutines.delay
 import ru.tech.imageresizershrinker.core.crash.components.GlobalExceptionHandler
 import ru.tech.imageresizershrinker.core.filters.presentation.utils.LocalFavoriteFiltersInteractor
 import ru.tech.imageresizershrinker.core.resources.emoji.Emoji
 import ru.tech.imageresizershrinker.core.settings.presentation.model.toUiState
-import ru.tech.imageresizershrinker.core.settings.presentation.provider.LocalEditPresetsState
-import ru.tech.imageresizershrinker.core.settings.presentation.provider.LocalSettingsInteractor
+import ru.tech.imageresizershrinker.core.settings.presentation.provider.LocalEditPresetsController
 import ru.tech.imageresizershrinker.core.settings.presentation.provider.LocalSettingsState
+import ru.tech.imageresizershrinker.core.settings.presentation.provider.LocalSimpleSettingInteractor
+import ru.tech.imageresizershrinker.core.settings.presentation.provider.rememberEditPresetsController
 import ru.tech.imageresizershrinker.core.ui.shapes.IconShapeDefaults
 import ru.tech.imageresizershrinker.core.ui.theme.ImageToolboxTheme
 import ru.tech.imageresizershrinker.core.ui.utils.confetti.ConfettiHost
@@ -60,11 +58,12 @@ import ru.tech.imageresizershrinker.core.ui.utils.confetti.LocalConfettiHostStat
 import ru.tech.imageresizershrinker.core.ui.utils.confetti.rememberConfettiHostState
 import ru.tech.imageresizershrinker.core.ui.utils.helper.ContextUtils.isInstalledFromPlayStore
 import ru.tech.imageresizershrinker.core.ui.utils.helper.ReviewHandler
-import ru.tech.imageresizershrinker.core.ui.utils.navigation.LocalNavController
+import ru.tech.imageresizershrinker.core.ui.utils.navigation.currentDestination
 import ru.tech.imageresizershrinker.core.ui.utils.provider.LocalImageLoader
 import ru.tech.imageresizershrinker.core.ui.widget.UpdateSheet
-import ru.tech.imageresizershrinker.core.ui.widget.haptics.customHapticFeedback
+import ru.tech.imageresizershrinker.core.ui.widget.haptics.rememberCustomHapticFeedback
 import ru.tech.imageresizershrinker.core.ui.widget.other.LocalToastHostState
+import ru.tech.imageresizershrinker.core.ui.widget.other.SecureModeHandler
 import ru.tech.imageresizershrinker.core.ui.widget.other.ToastHost
 import ru.tech.imageresizershrinker.core.ui.widget.saver.EnhancedAutoSaverInit
 import ru.tech.imageresizershrinker.core.ui.widget.sheets.ProcessImagesPreferenceSheet
@@ -75,6 +74,7 @@ import ru.tech.imageresizershrinker.feature.root.presentation.components.GithubR
 import ru.tech.imageresizershrinker.feature.root.presentation.components.PermissionDialog
 import ru.tech.imageresizershrinker.feature.root.presentation.components.ScreenSelector
 import ru.tech.imageresizershrinker.feature.root.presentation.viewModel.RootViewModel
+import ru.tech.imageresizershrinker.feature.settings.presentation.components.additional.DonateDialog
 
 @Composable
 fun RootContent(
@@ -85,28 +85,15 @@ fun RootContent(
     val context = LocalContext.current as ComponentActivity
 
     var showExitDialog by rememberSaveable { mutableStateOf(false) }
-    val editPresetsState = rememberSaveable { mutableStateOf(false) }
 
     var randomEmojiKey by remember {
         mutableIntStateOf(0)
     }
-    val backstack = viewModel.navController.backstack.entries
-    LaunchedEffect(backstack) {
+
+    val currentDestination = viewModel.navController.currentDestination()
+    LaunchedEffect(currentDestination) {
         delay(200L) // Delay for transition
         randomEmojiKey++
-    }
-
-    val currentDestination by remember(backstack) {
-        derivedStateOf {
-            backstack.lastOrNull()
-        }
-    }
-    LaunchedEffect(currentDestination) {
-        currentDestination?.takeIf {
-            viewModel.navController.backstack.action == NavAction.Navigate
-        }?.destination?.let {
-            GlobalExceptionHandler.registerScreenOpen(it)
-        }
     }
 
     val settingsState = viewModel.settingsState.toUiState(
@@ -116,35 +103,24 @@ fun RootContent(
         getEmojiColorTuple = viewModel::getColorTupleFromEmoji
     )
 
-    val isSecureMode = settingsState.isSecureMode
-    LaunchedEffect(isSecureMode) {
-        if (isSecureMode) {
-            context.window.setFlags(
-                WindowManager.LayoutParams.FLAG_SECURE,
-                WindowManager.LayoutParams.FLAG_SECURE
-            )
-        } else {
-            context.window.clearFlags(
-                WindowManager.LayoutParams.FLAG_SECURE
-            )
-        }
-    }
+    val editPresetsController = rememberEditPresetsController()
 
     CompositionLocalProvider(
         LocalToastHostState provides viewModel.toastHostState,
         LocalSettingsState provides settingsState,
-        LocalSettingsInteractor provides viewModel.getSettingsInteractor(),
-        LocalNavController provides viewModel.navController,
-        LocalEditPresetsState provides editPresetsState,
+        LocalSimpleSettingInteractor provides viewModel.getSettingsInteractor(),
+        LocalEditPresetsController provides editPresetsController,
         LocalConfettiHostState provides rememberConfettiHostState(),
         LocalImageLoader provides viewModel.imageLoader,
-        LocalHapticFeedback provides customHapticFeedback(viewModel.settingsState.hapticsStrength),
+        LocalHapticFeedback provides rememberCustomHapticFeedback(viewModel.settingsState.hapticsStrength),
         LocalFavoriteFiltersInteractor provides viewModel.favoriteFiltersInteractor
     ) {
-        val showSelectSheet = rememberSaveable(viewModel.showSelectDialog) {
+        SecureModeHandler()
+
+        var showSelectSheet by rememberSaveable(viewModel.showSelectDialog) {
             mutableStateOf(viewModel.showSelectDialog)
         }
-        val showUpdateSheet = rememberSaveable(viewModel.showUpdateDialog) {
+        var showUpdateSheet by rememberSaveable(viewModel.showUpdateDialog) {
             mutableStateOf(viewModel.showUpdateDialog)
         }
         LaunchedEffect(settingsState) {
@@ -152,15 +128,15 @@ fun RootContent(
             GlobalExceptionHandler.setAnalyticsCollectionEnabled(settingsState.allowCollectAnalytics)
         }
 
-        LaunchedEffect(showSelectSheet.value) {
-            if (!showSelectSheet.value) {
+        LaunchedEffect(showSelectSheet) {
+            if (!showSelectSheet) {
                 delay(600)
                 viewModel.hideSelectDialog()
                 viewModel.updateUris(null)
             }
         }
-        LaunchedEffect(showUpdateSheet.value) {
-            if (!showUpdateSheet.value) {
+        LaunchedEffect(showUpdateSheet) {
+            if (!showUpdateSheet) {
                 delay(600)
                 viewModel.cancelledUpdate()
             }
@@ -189,11 +165,15 @@ fun RootContent(
             }
 
             Surface(Modifier.fillMaxSize()) {
-                ScreenSelector(viewModel)
+                ScreenSelector(
+                    viewModel = viewModel,
+                    onRegisterScreenOpen = GlobalExceptionHandler.Companion::registerScreenOpen
+                )
 
                 EditPresetsSheet(
-                    editPresetsState = editPresetsState,
-                    updatePresets = viewModel::setPresets
+                    visible = editPresetsController.isVisible,
+                    onDismiss = editPresetsController::close,
+                    onUpdatePresets = viewModel::setPresets
                 )
 
                 val clipboardManager = LocalClipboardManager.current.nativeClipboard
@@ -201,11 +181,19 @@ fun RootContent(
                     uris = viewModel.uris ?: emptyList(),
                     extraImageType = viewModel.extraImageType,
                     visible = showSelectSheet,
-                    navigate = { screen ->
+                    onDismiss = { showSelectSheet = it },
+                    onNavigate = { screen ->
+                        GlobalExceptionHandler.registerScreenOpen(screen)
                         viewModel.navController.navigate(screen)
-                        showSelectSheet.value = false
+                        showSelectSheet = false
                         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-                            clipboardManager.clearPrimaryClip()
+                            runCatching {
+                                clipboardManager.clearPrimaryClip()
+                            }.onFailure {
+                                clipboardManager.setPrimaryClip(
+                                    ClipData.newPlainText(null, "")
+                                )
+                            }
                         } else {
                             clipboardManager.setPrimaryClip(
                                 ClipData.newPlainText(null, "")
@@ -223,7 +211,10 @@ fun RootContent(
             UpdateSheet(
                 tag = viewModel.tag,
                 changelog = viewModel.changelog,
-                visible = showUpdateSheet
+                visible = showUpdateSheet,
+                onDismiss = {
+                    showUpdateSheet = false
+                }
             )
 
             ConfettiHost()
@@ -234,13 +225,19 @@ fun RootContent(
 
             SideEffect {
                 viewModel.tryGetUpdate(
-                    installedFromMarket = context.isInstalledFromPlayStore()
+                    isInstalledFromMarket = context.isInstalledFromPlayStore()
                 )
             }
 
             FirstLaunchSetupDialog(
                 toggleShowUpdateDialog = viewModel::toggleShowUpdateDialog,
-                toggleAllowBetas = viewModel::toggleAllowBetas
+                toggleAllowBetas = viewModel::toggleAllowBetas,
+                adjustPerformance = viewModel::adjustPerformance
+            )
+
+            DonateDialog(
+                onRegisterDonateDialogOpen = viewModel::registerDonateDialogOpen,
+                onNotShowDonateDialogAgain = viewModel::notShowDonateDialogAgain
             )
 
             PermissionDialog()
@@ -251,7 +248,7 @@ fun RootContent(
                     onNotShowAgain = {
                         ReviewHandler.notShowReviewAgain(context)
                     },
-                    showNotShowAgainButton = ReviewHandler.showNotShowAgainButton
+                    isNotShowAgainButtonVisible = ReviewHandler.showNotShowAgainButton
                 )
             }
         }

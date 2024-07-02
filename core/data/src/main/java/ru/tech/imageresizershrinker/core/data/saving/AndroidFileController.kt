@@ -47,16 +47,19 @@ import kotlinx.coroutines.withContext
 import okio.use
 import ru.tech.imageresizershrinker.core.domain.dispatchers.DispatchersHolder
 import ru.tech.imageresizershrinker.core.domain.image.ShareProvider
-import ru.tech.imageresizershrinker.core.domain.image.model.Metadata
+import ru.tech.imageresizershrinker.core.domain.image.model.MetadataTag
 import ru.tech.imageresizershrinker.core.domain.saving.FileController
 import ru.tech.imageresizershrinker.core.domain.saving.RandomStringGenerator
+import ru.tech.imageresizershrinker.core.domain.saving.Writeable
 import ru.tech.imageresizershrinker.core.domain.saving.model.ImageSaveTarget
 import ru.tech.imageresizershrinker.core.domain.saving.model.SaveResult
 import ru.tech.imageresizershrinker.core.domain.saving.model.SaveTarget
+import ru.tech.imageresizershrinker.core.domain.saving.use
 import ru.tech.imageresizershrinker.core.domain.utils.readableByteCount
 import ru.tech.imageresizershrinker.core.resources.R
 import ru.tech.imageresizershrinker.core.settings.domain.SettingsManager
 import ru.tech.imageresizershrinker.core.settings.domain.model.CopyToClipboardMode
+import ru.tech.imageresizershrinker.core.settings.domain.model.OneTimeSaveLocation
 import ru.tech.imageresizershrinker.core.settings.domain.model.SettingsState
 import java.io.File
 import java.io.FileOutputStream
@@ -112,11 +115,13 @@ internal class AndroidFileController @Inject constructor(
         return null
     }
 
-    override val savingPath: String
-        get() = settingsState.saveFolderUri?.takeIf { it.isNotEmpty() }?.toUri().toUiPath(
-            context = context,
-            default = context.getString(R.string.default_folder)
-        )
+    private fun String?.getPath() = this?.takeIf { it.isNotEmpty() }?.toUri().toUiPath(
+        context = context,
+        default = context.getString(R.string.default_folder)
+    )
+
+    override val defaultSavingPath: String
+        get() = settingsState.saveFolderUri.getPath()
 
     private fun Uri?.toUiPath(
         context: Context,
@@ -147,11 +152,14 @@ internal class AndroidFileController @Inject constructor(
     @SuppressLint("StringFormatInvalid")
     override suspend fun save(
         saveTarget: SaveTarget,
-        keepOriginalMetadata: Boolean
+        keepOriginalMetadata: Boolean,
+        oneTimeSaveLocationUri: String?
     ): SaveResult = withContext(ioDispatcher) {
         if (!context.isExternalStorageWritable()) {
             return@withContext SaveResult.Error.MissingPermissions
         }
+
+        val savingPath = oneTimeSaveLocationUri?.getPath() ?: defaultSavingPath
 
         runCatching {
             if (settingsState.copyToClipboardMode is CopyToClipboardMode.Enabled) {
@@ -172,7 +180,10 @@ internal class AndroidFileController @Inject constructor(
             }
 
             if (settingsState.copyToClipboardMode is CopyToClipboardMode.Enabled.WithoutSaving) {
-                return@withContext SaveResult.Success(context.getString(R.string.copied))
+                return@withContext SaveResult.Success(
+                    message = context.getString(R.string.copied),
+                    savingPath = savingPath
+                )
             }
 
             val originalUri = saveTarget.originalUri.toUri()
@@ -197,7 +208,7 @@ internal class AndroidFileController @Inject constructor(
                 }.getOrNull()?.use { parcel ->
                     FileOutputStream(parcel.fileDescriptor).use { out ->
                         out.write(saveTarget.data)
-                        kotlin.runCatching {
+                        runCatching {
                             copyMetadata(
                                 initialExif = (saveTarget as? ImageSaveTarget<*>)?.metadata as ExifInterface?,
                                 fileUri = originalUri,
@@ -211,11 +222,12 @@ internal class AndroidFileController @Inject constructor(
                         message = context.getString(
                             R.string.saved_to_original,
                             originalUri.getFilename().toString()
-                        )
+                        ),
+                        savingPath = savingPath
                     )
                 }
             } else {
-                settingsState.saveFolderUri.takeIf {
+                (oneTimeSaveLocationUri ?: settingsState.saveFolderUri).takeIf {
                     !it.isNullOrEmpty()
                 }?.let { treeUri ->
                     val hasDir: Boolean = runCatching {
@@ -225,7 +237,15 @@ internal class AndroidFileController @Inject constructor(
                     }.getOrNull() == true
 
                     if (!hasDir) {
-                        settingsManager.setSaveFolderUri(null)
+                        if (oneTimeSaveLocationUri == null) {
+                            settingsManager.setSaveFolderUri(null)
+                        } else {
+                            settingsManager.setOneTimeSaveLocations(
+                                settingsState.oneTimeSaveLocations.let { locations ->
+                                    (locations - locations.find { it.uri == oneTimeSaveLocationUri }).filterNotNull()
+                                }
+                            )
+                        }
                         return@withContext SaveResult.Error.Exception(
                             Exception(
                                 context.getString(
@@ -248,7 +268,9 @@ internal class AndroidFileController @Inject constructor(
                 } else saveTarget
 
                 val savingFolder = context.getSavingFolder(
-                    treeUri = settingsState.saveFolderUri?.takeIf { it.isNotEmpty() }?.toUri(),
+                    treeUri = (oneTimeSaveLocationUri ?: settingsState.saveFolderUri)?.takeIf {
+                        it.isNotEmpty()
+                    }?.toUri(),
                     saveTarget = newSaveTarget
                 )
 
@@ -267,8 +289,35 @@ internal class AndroidFileController @Inject constructor(
 
                 val filename = newSaveTarget.filename ?: ""
 
+                oneTimeSaveLocationUri?.let {
+                    val currentLocation =
+                        settingsState.oneTimeSaveLocations.find { it.uri == oneTimeSaveLocationUri }
+
+                    settingsManager.setOneTimeSaveLocations(
+                        currentLocation?.let {
+                            settingsState.oneTimeSaveLocations.toMutableList().apply {
+                                remove(currentLocation)
+                                add(
+                                    currentLocation.copy(
+                                        uri = oneTimeSaveLocationUri,
+                                        date = System.currentTimeMillis(),
+                                        count = currentLocation.count + 1
+                                    )
+                                )
+                            }
+                        } ?: settingsState.oneTimeSaveLocations.plus(
+                            OneTimeSaveLocation(
+                                uri = oneTimeSaveLocationUri,
+                                date = System.currentTimeMillis(),
+                                count = 1
+                            )
+                        )
+                    )
+                }
+
+
                 return@withContext SaveResult.Success(
-                    if (savingPath.isNotEmpty()) {
+                    message = if (savingPath.isNotEmpty()) {
                         if (filename.isNotEmpty()) {
                             context.getString(
                                 R.string.saved_to,
@@ -281,7 +330,8 @@ internal class AndroidFileController @Inject constructor(
                                 savingPath
                             )
                         }
-                    } else null
+                    } else null,
+                    savingPath = savingPath
                 )
             }
         }.onFailure {
@@ -326,8 +376,8 @@ internal class AndroidFileController @Inject constructor(
     private suspend infix fun ExifInterface.copyTo(
         newExif: ExifInterface
     ) = withContext(defaultDispatcher) {
-        Metadata.metaTags.forEach { attr ->
-            getAttribute(attr)?.let { newExif.setAttribute(attr, it) }
+        MetadataTag.entries.forEach { attr ->
+            getAttribute(attr.key)?.let { newExif.setAttribute(attr.key, it) }
         }
         newExif.saveAttributes()
     }
@@ -442,6 +492,47 @@ internal class AndroidFileController @Inject constructor(
     override fun clearCache(onComplete: (String) -> Unit) = context.clearCache(onComplete)
 
     override fun getReadableCacheSize(): String = context.cacheSize()
+
+    override suspend fun readBytes(
+        uri: String
+    ): ByteArray = withContext(ioDispatcher) {
+        context.contentResolver.openInputStream(uri.toUri())?.use {
+            it.buffered().readBytes()
+        } ?: ByteArray(0)
+    }
+
+    override suspend fun writeBytes(
+        uri: String,
+        block: suspend (Writeable) -> Unit,
+    ): SaveResult {
+        runCatching {
+            context.openWriteableStream(
+                uri = uri.toUri(),
+                onError = { throw it }
+            )?.let { stream ->
+                StreamWriteable(stream).use { block(it) }
+            }
+        }.onSuccess {
+            return SaveResult.Success(null, "")
+        }.onFailure {
+            return SaveResult.Error.Exception(it)
+        }
+
+        return SaveResult.Error.Exception(IllegalStateException())
+    }
+
+    private fun Context.openWriteableStream(
+        uri: Uri?,
+        onError: (Throwable) -> Unit = {}
+    ): OutputStream? = uri?.let {
+        runCatching {
+            contentResolver.openOutputStream(uri, "rw")
+        }.getOrElse {
+            runCatching {
+                contentResolver.openOutputStream(uri, "w")
+            }.onFailure(onError).getOrNull()
+        }
+    }
 
     private fun Context.clearCache(onComplete: (cache: String) -> Unit = {}) {
         CoroutineScope(defaultDispatcher).launch {

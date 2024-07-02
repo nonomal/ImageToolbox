@@ -41,6 +41,12 @@ interface ImageGetter<I, M> {
         originalSize: Boolean = true
     ): ImageData<I, M>?
 
+    suspend fun getImageWithTransformations(
+        data: Any,
+        transformations: List<Transformation<I>>,
+        size: IntegerSize?
+    ): I?
+
     suspend fun getImage(
         data: Any,
         originalSize: Boolean = true
@@ -49,6 +55,11 @@ interface ImageGetter<I, M> {
     suspend fun getImage(
         data: Any,
         size: IntegerSize?
+    ): I?
+
+    suspend fun getImage(
+        data: Any,
+        size: Int?
     ): I?
 
     fun getExtension(

@@ -90,6 +90,7 @@ internal fun List<Uri>.screenList(
             listOf(
                 Screen.SingleEdit(uris.firstOrNull()),
                 Screen.ResizeAndConvert(uris),
+                Screen.FormatConversion(uris),
                 Screen.ResizeByBytes(uris),
                 Screen.Crop(uris.firstOrNull()),
                 Screen.Filter(
@@ -102,6 +103,7 @@ internal fun List<Uri>.screenList(
                     type = Screen.Filter.Type.Masking(uris.firstOrNull())
                 ),
                 Screen.ImageStitching(uris),
+                Screen.ImageStacking(uris),
                 Screen.Watermarking(uris),
                 Screen.GradientMaker(uris),
                 Screen.PdfTools(
@@ -120,7 +122,7 @@ internal fun List<Uri>.screenList(
                 Screen.JxlTools(
                     Screen.JxlTools.Type.ImageToJxl(uris)
                 ),
-                Screen.Svg(uris),
+                Screen.SvgMaker(uris),
                 Screen.Zip(uris),
                 Screen.DeleteExif(uris),
                 Screen.LimitResize(uris)
@@ -150,6 +152,7 @@ internal fun List<Uri>.screenList(
             mutableListOf(
                 Screen.ResizeAndConvert(uris),
                 Screen.ResizeByBytes(uris),
+                Screen.FormatConversion(uris),
                 Screen.Filter(
                     type = Screen.Filter.Type.Basic(uris)
                 )
@@ -164,10 +167,11 @@ internal fun List<Uri>.screenList(
                         Screen.GifTools.Type.ImageToGif(uris)
                     )
                 )
+                add(Screen.ImageStacking(uris))
                 add(Screen.ImagePreview(uris))
                 add(Screen.LimitResize(uris))
                 add(Screen.Zip(uris))
-                add(Screen.Svg(uris))
+                add(Screen.SvgMaker(uris))
 
                 var haveJpeg = false
                 var haveJxl = false
@@ -214,6 +218,15 @@ internal fun List<Uri>.screenList(
         }
     }
 
+    val textAvailableScreens by remember(extraImageType) {
+        derivedStateOf {
+            listOf(
+                Screen.ScanQrCode(extraImageType ?: ""),
+                Screen.LoadNetImage(extraImageType ?: "")
+            )
+        }
+    }
+
     return remember(
         extraImageType,
         uris,
@@ -226,7 +239,10 @@ internal fun List<Uri>.screenList(
                 extraImageType == "pdf" -> pdfAvailableScreens
                 extraImageType == "gif" -> gifAvailableScreens
                 extraImageType == "file" -> filesAvailableScreens
-                uris.size <= 1 -> singleImageScreens
+                uris.size == 1 -> singleImageScreens
+                uris.size >= 2 -> multipleImagesScreens
+                extraImageType != null -> textAvailableScreens
+
                 else -> multipleImagesScreens
             }
         }

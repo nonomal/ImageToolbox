@@ -17,7 +17,6 @@
 
 package ru.tech.imageresizershrinker.feature.single_edit.presentation
 
-import android.content.res.Configuration
 import android.net.Uri
 import androidx.activity.ComponentActivity
 import androidx.compose.foundation.layout.Spacer
@@ -27,34 +26,34 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.History
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LocalContentColor
-import androidx.compose.material3.windowsizeclass.WindowWidthSizeClass
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.t8rin.dynamic.theme.LocalDynamicThemeState
 import dev.olshevski.navigation.reimagined.hilt.hiltViewModel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import ru.tech.imageresizershrinker.core.resources.R
 import ru.tech.imageresizershrinker.core.resources.icons.ImageReset
 import ru.tech.imageresizershrinker.core.settings.presentation.provider.LocalSettingsState
 import ru.tech.imageresizershrinker.core.ui.utils.confetti.LocalConfettiHostState
-import ru.tech.imageresizershrinker.core.ui.utils.helper.ImageUtils.haveChanges
 import ru.tech.imageresizershrinker.core.ui.utils.helper.Picker
 import ru.tech.imageresizershrinker.core.ui.utils.helper.asClip
+import ru.tech.imageresizershrinker.core.ui.utils.helper.isPortraitOrientationAsState
 import ru.tech.imageresizershrinker.core.ui.utils.helper.localImagePickerMode
 import ru.tech.imageresizershrinker.core.ui.utils.helper.parseSaveResult
 import ru.tech.imageresizershrinker.core.ui.utils.helper.rememberImagePicker
-import ru.tech.imageresizershrinker.core.ui.utils.provider.LocalWindowSizeClass
+import ru.tech.imageresizershrinker.core.ui.utils.navigation.Screen
 import ru.tech.imageresizershrinker.core.ui.widget.AdaptiveLayoutScreen
 import ru.tech.imageresizershrinker.core.ui.widget.buttons.BottomButtonsBlock
 import ru.tech.imageresizershrinker.core.ui.widget.buttons.CompareButton
@@ -63,14 +62,15 @@ import ru.tech.imageresizershrinker.core.ui.widget.buttons.ShareButton
 import ru.tech.imageresizershrinker.core.ui.widget.buttons.ShowOriginalButton
 import ru.tech.imageresizershrinker.core.ui.widget.buttons.ZoomButton
 import ru.tech.imageresizershrinker.core.ui.widget.controls.ImageExtraTransformBar
-import ru.tech.imageresizershrinker.core.ui.widget.controls.ImageFormatSelector
 import ru.tech.imageresizershrinker.core.ui.widget.controls.ImageTransformBar
-import ru.tech.imageresizershrinker.core.ui.widget.controls.PresetSelector
-import ru.tech.imageresizershrinker.core.ui.widget.controls.QualitySelector
 import ru.tech.imageresizershrinker.core.ui.widget.controls.ResizeImageField
-import ru.tech.imageresizershrinker.core.ui.widget.controls.ScaleModeSelector
 import ru.tech.imageresizershrinker.core.ui.widget.controls.resize_group.ResizeTypeSelector
+import ru.tech.imageresizershrinker.core.ui.widget.controls.selection.ImageFormatSelector
+import ru.tech.imageresizershrinker.core.ui.widget.controls.selection.PresetSelector
+import ru.tech.imageresizershrinker.core.ui.widget.controls.selection.QualitySelector
+import ru.tech.imageresizershrinker.core.ui.widget.controls.selection.ScaleModeSelector
 import ru.tech.imageresizershrinker.core.ui.widget.dialogs.ExitWithoutSavingDialog
+import ru.tech.imageresizershrinker.core.ui.widget.dialogs.OneTimeSaveLocationSelectionDialog
 import ru.tech.imageresizershrinker.core.ui.widget.dialogs.ResetDialog
 import ru.tech.imageresizershrinker.core.ui.widget.image.AutoFilePicker
 import ru.tech.imageresizershrinker.core.ui.widget.image.ImageContainer
@@ -80,6 +80,7 @@ import ru.tech.imageresizershrinker.core.ui.widget.other.LocalToastHostState
 import ru.tech.imageresizershrinker.core.ui.widget.other.TopAppBarEmoji
 import ru.tech.imageresizershrinker.core.ui.widget.other.showError
 import ru.tech.imageresizershrinker.core.ui.widget.sheets.EditExifSheet
+import ru.tech.imageresizershrinker.core.ui.widget.sheets.ProcessImagesPreferenceSheet
 import ru.tech.imageresizershrinker.core.ui.widget.sheets.ZoomModalSheet
 import ru.tech.imageresizershrinker.core.ui.widget.text.TopAppBarTitle
 import ru.tech.imageresizershrinker.feature.compare.presentation.components.CompareSheet
@@ -90,9 +91,10 @@ import ru.tech.imageresizershrinker.feature.single_edit.presentation.components.
 import ru.tech.imageresizershrinker.feature.single_edit.presentation.viewModel.SingleEditViewModel
 
 @Composable
-fun SingleEditScreen(
+fun SingleEditContent(
     uriState: Uri?,
     onGoBack: () -> Unit,
+    onNavigate: (Screen) -> Unit,
     viewModel: SingleEditViewModel = hiltViewModel(),
 ) {
     val settingsState = LocalSettingsState.current
@@ -161,37 +163,40 @@ fun SingleEditScreen(
         isPickedAlready = uriState != null
     )
 
-    val saveBitmap: () -> Unit = {
-        viewModel.saveBitmap { saveResult ->
-            parseSaveResult(
+    val saveBitmap: (oneTimeSaveLocationUri: String?) -> Unit = {
+        viewModel.saveBitmap(it) { saveResult ->
+            context.parseSaveResult(
                 saveResult = saveResult,
                 onSuccess = showConfetti,
                 toastHostState = toastHostState,
-                scope = scope,
-                context = context
+                scope = scope
             )
         }
     }
 
-    val isPortrait =
-        LocalConfiguration.current.orientation != Configuration.ORIENTATION_LANDSCAPE || LocalWindowSizeClass.current.widthSizeClass == WindowWidthSizeClass.Compact
+    val isPortrait by isPortraitOrientationAsState()
 
-    val showZoomSheet = rememberSaveable { mutableStateOf(false) }
-
-    val showCompareSheet = rememberSaveable { mutableStateOf(false) }
+    var showZoomSheet by rememberSaveable { mutableStateOf(false) }
+    var showCompareSheet by rememberSaveable { mutableStateOf(false) }
 
     CompareSheet(
         data = viewModel.initialBitmap to viewModel.previewBitmap,
-        visible = showCompareSheet
+        visible = showCompareSheet,
+        onDismiss = {
+            showCompareSheet = false
+        }
     )
 
     ZoomModalSheet(
         data = viewModel.previewBitmap,
-        visible = showZoomSheet
+        visible = showZoomSheet,
+        onDismiss = {
+            showZoomSheet = false
+        }
     )
 
     val onBack = {
-        if (imageInfo.haveChanges(viewModel.bitmap)) showExitDialog = true
+        if (viewModel.haveChanges) showExitDialog = true
         else onGoBack()
     }
 
@@ -215,17 +220,20 @@ fun SingleEditScreen(
                 TopAppBarEmoji()
             }
             CompareButton(
-                onClick = { showCompareSheet.value = true },
+                onClick = { showCompareSheet = true },
                 visible = viewModel.previewBitmap != null
                         && viewModel.bitmap != null
                         && viewModel.shouldShowPreview
             )
             ZoomButton(
-                onClick = { showZoomSheet.value = true },
+                onClick = { showZoomSheet = true },
                 visible = viewModel.previewBitmap != null && viewModel.shouldShowPreview
             )
         },
         actions = {
+            var editSheetData by remember {
+                mutableStateOf(listOf<Uri>())
+            }
             ShareButton(
                 enabled = viewModel.bitmap != null,
                 onShare = {
@@ -235,6 +243,27 @@ fun SingleEditScreen(
                     viewModel.cacheCurrentImage { uri ->
                         manager.setClip(uri.asClip(context))
                         showConfetti()
+                    }
+                },
+                onEdit = {
+                    viewModel.cacheCurrentImage { uri ->
+                        editSheetData = listOf(uri)
+                    }
+                }
+            )
+            ProcessImagesPreferenceSheet(
+                uris = editSheetData,
+                visible = editSheetData.isNotEmpty(),
+                onDismiss = {
+                    if (!it) {
+                        editSheetData = emptyList()
+                    }
+                },
+                onNavigate = { screen ->
+                    scope.launch {
+                        editSheetData = emptyList()
+                        delay(200)
+                        onNavigate(screen)
                     }
                 }
             )
@@ -284,9 +313,9 @@ fun SingleEditScreen(
             )
         },
         controls = {
-            val showEditExifDialog = rememberSaveable { mutableStateOf(false) }
+            var showEditExifDialog by rememberSaveable { mutableStateOf(false) }
             ImageTransformBar(
-                onEditExif = { showEditExifDialog.value = true },
+                onEditExif = { showEditExifDialog = true },
                 imageFormat = viewModel.imageInfo.imageFormat,
                 onRotateLeft = viewModel::rotateBitmapLeft,
                 onFlip = viewModel::flipImage,
@@ -341,6 +370,9 @@ fun SingleEditScreen(
 
             EditExifSheet(
                 visible = showEditExifDialog,
+                onDismiss = {
+                    showEditExifDialog = false
+                },
                 exif = viewModel.exif,
                 onClearExif = viewModel::clearExif,
                 onUpdateTag = viewModel::updateExifByTag,
@@ -348,14 +380,28 @@ fun SingleEditScreen(
             )
         },
         buttons = {
+            var showFolderSelectionDialog by rememberSaveable {
+                mutableStateOf(false)
+            }
             BottomButtonsBlock(
                 targetState = (viewModel.uri == Uri.EMPTY) to isPortrait,
                 onSecondaryButtonClick = pickImage,
-                onPrimaryButtonClick = saveBitmap,
+                onPrimaryButtonClick = {
+                    saveBitmap(null)
+                },
+                onPrimaryButtonLongClick = {
+                    showFolderSelectionDialog = true
+                },
                 actions = {
                     if (isPortrait) it()
                 }
             )
+            if (showFolderSelectionDialog) {
+                OneTimeSaveLocationSelectionDialog(
+                    onDismiss = { showFolderSelectionDialog = false },
+                    onSaveRequest = saveBitmap
+                )
+            }
         },
         canShowScreenData = viewModel.bitmap != null,
         noDataControls = {
@@ -409,7 +455,6 @@ fun SingleEditScreen(
         onGetBitmap = {
             viewModel.updateBitmapAfterEditing(it, true)
         },
-        onRequestFiltering = viewModel::filter,
         onRequestMappingFilters = viewModel::mapFilters,
         filterList = viewModel.filterList,
         updateOrder = viewModel::updateOrder,

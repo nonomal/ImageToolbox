@@ -3,67 +3,81 @@ androidMinSdk = "21"
 androidTargetSdk = "34"
 androidCompileSdk = "34"
 
-versionName = "2.7.1-rc01"
-versionCode = "132"
+versionName = "2.9.0"
+versionCode = "144"
 
 jvmTarget = "17"
-compose-compiler = "1.5.11"
+compose-compiler = "1.5.14"
 
-imageToolboxLibs = "1.4.3"
+imageToolboxLibs = "1.7.11"
 
 avifCoderCoil = "1.7.5"
 avifCoder = "1.7.5"
-aire = "0.9.90"
+aire = "0.13.3"
 jxlCoderCoil = "2.2.0"
 jxlCoder = "2.2.0"
 
 tesseract = "4.7.0"
-composeVersion = "1.7.0-alpha06"
-androidx-datastorePreferencesAndroid = "1.1.0-rc01"
+composeVersion = "1.7.0-beta04"
+androidx-datastorePreferencesAndroid = "1.1.1"
 appUpdateKtx = "2.1.0"
 appUpdate = "2.1.0"
 shadowGadgets = "2.2.1"
 fadingEdges = "1.0.4"
-firebaseCrashlyticsKtx = "18.6.4"
+firebaseCrashlyticsKtx = "19.0.2"
 konfettiCompose = "2.0.4"
 reimagined = "1.5.0"
 shadowsPlus = "1.0.4"
 exifinterface = "1.3.7"
-firebaseAnalyticsKtx = "21.6.2"
-firebaseCrashlyticsGradle = "2.9.9"
+firebaseAnalyticsKtx = "22.0.2"
+firebaseCrashlyticsGradle = "3.0.2"
 google-segmentationSelfie = "16.0.0-beta5"
+google-subjectSegmentation = "16.0.0-beta1"
 detekt = "1.23.6"
-detektCompose = "0.3.14"
+detektCompose = "0.4.5"
 
-kotlin = "1.9.23"
-agp = "8.3.2"
+kotlin = "1.9.24"
+agp = "8.5.0"
 hilt = "2.51.1"
-gms = "4.4.1"
+gms = "4.4.2"
 
 coil = "2.6.0"
-appCompat = "1.7.0-alpha03"
-androidxCore = "1.13.0-rc01"
-androidxLifecycle = "2.8.0-alpha04"
+appCompat = "1.7.0"
+androidxCore = "1.13.1"
+androidxLifecycle = "2.8.3"
 desugaring = "2.0.4"
-activityCompose = "1.9.0-rc01"
+activityCompose = "1.9.0"
 kotlinxCollectionsImmutable = "0.3.7"
-scrollbar = "1.10.0"
-material3 = "1.3.0-alpha04"
+scrollbar = "2.2.0"
+material3 = "1.3.0-beta04"
 reorderable = "0.9.6"
 reviewKtx = "2.0.1"
-splashScreen = "1.0.1"
+splashScreen = "1.2.0-alpha01"
 
-espresso = "3.5.1"
-ksp = "1.9.23-1.0.20"
+espresso = "3.6.1"
+ksp = "1.9.24-1.0.20"
 
-androidx-test-ext-junit = "1.1.5"
+androidx-test-ext-junit = "1.2.1"
 documentfile = "1.0.1"
 uiautomator = "2.3.0"
-androidxMacroBenchmark = "1.3.0-alpha02"
+androidxMacroBenchmark = "1.3.0-beta01"
+quickieBundled = "1.10.0"
+quickieFoss = "1.11.0"
 
-material = "1.12.0-rc01"
+material = "1.13.0-alpha03"
+
+documentScanner = "1.3.7"
+mlkitDocumentScanner = "16.0.0-beta1"
+zxingAndroidEmbedded = "4.3.0"
+capturable = "2.1.0"
 
 [libraries]
+mlkit-document-scanner = { module = "com.google.android.gms:play-services-mlkit-document-scanner", version.ref = "mlkitDocumentScanner" }
+quickie-bundled = { module = "io.github.g00fy2.quickie:quickie-bundled", version.ref = "quickieBundled" }
+quickie-foss = { module = "com.github.T8RIN:quickie-foss", version.ref = "quickieFoss" }
+zxing-android-embedded = { module = "com.journeyapps:zxing-android-embedded", version.ref = "zxingAndroidEmbedded" }
+capturable = { module = "dev.shreyaspatil:capturable", version.ref = "capturable" }
+documentscanner = { module = "com.github.T8RIN:DocumentScanner", version.ref = "documentScanner" }
 imageToolboxLibs = { module = "com.github.T8RIN:ImageToolboxLibs", version.ref = "imageToolboxLibs" }
 kotlin-reflect = { module = "org.jetbrains.kotlin:kotlin-reflect", version.ref = "kotlin" }
 aire = { module = "com.github.awxkee:aire", version.ref = "aire" }
@@ -92,19 +106,19 @@ coilGif = { module = "io.coil-kt:coil-gif", version.ref = "coil" }
 coilSvg = { module = "io.coil-kt:coil-svg", version.ref = "coil" }
 coil = { module = "io.coil-kt:coil", version.ref = "coil" }
 firebase-analytics-ktx = { module = "com.google.firebase:firebase-analytics-ktx", version.ref = "firebaseAnalyticsKtx" }
-jxl-coder-coil = { module = "com.github.awxkee:jxl-coder-coil", version.ref = "jxlCoderCoil" }
-jxl-coder = { module = "com.github.awxkee:jxl-coder", version.ref = "jxlCoder" }
+jxl-coder-coil = { module = "io.github.awxkee:jxl-coder-coil", version.ref = "jxlCoderCoil" }
+jxl-coder = { module = "io.github.awxkee:jxl-coder", version.ref = "jxlCoder" }
 kotlinx-collections-immutable = { module = "org.jetbrains.kotlinx:kotlinx-collections-immutable", version.ref = "kotlinxCollectionsImmutable" }
 appCompat = { module = "androidx.appcompat:appcompat", version.ref = "appCompat" }
 androidxCore = { module = "androidx.core:core-ktx", version.ref = "androidxCore" }
 scrollbar = { module = "com.github.nanihadesuka:LazyColumnScrollbar", version.ref = "scrollbar" }
 mlkit-segmentation-selfie = { module = "com.google.mlkit:segmentation-selfie", version.ref = "google-segmentationSelfie" }
+mlkit-subject-segmentation = { module = "com.google.android.gms:play-services-mlkit-subject-segmentation", version.ref = "google-subjectSegmentation" }
 reorderable = { module = "org.burnoutcrew.composereorderable:reorderable", version.ref = "reorderable" }
 review-ktx = { module = "com.google.android.play:review-ktx", version.ref = "reviewKtx" }
 splashScreen = { module = "androidx.core:core-splashscreen", version.ref = "splashScreen" }
 activityCompose = { module = "androidx.activity:activity-compose", version.ref = "activityCompose" }
 hilt = { module = "com.google.dagger:hilt-android", version.ref = "hilt" }
-
 material = { group = "com.google.android.material", name = "material", version.ref = "material" }
 espresso = { module = "androidx.test.espresso:espresso-core", version.ref = "espresso" }
 

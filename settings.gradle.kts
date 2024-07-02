@@ -21,9 +21,15 @@ pluginManagement {
     repositories {
         includeBuild("build-logic")
         gradlePluginPortal()
-        google()
+        google {
+            content {
+                includeGroupByRegex("com\\.android.*")
+                includeGroupByRegex("com\\.google.*")
+                includeGroupByRegex("androidx.*")
+            }
+        }
         mavenCentral()
-        maven { setUrl("https://jitpack.io") }
+        maven("https://jitpack.io") { name = "JitPack" }
     }
 }
 dependencyResolutionManagement {
@@ -31,9 +37,9 @@ dependencyResolutionManagement {
     repositories {
         google {
             content {
-                includeGroupAndSubgroups("androidx")
-                includeGroupAndSubgroups("com.android")
-                includeGroupAndSubgroups("com.google")
+                includeGroupByRegex("com\\.android.*")
+                includeGroupByRegex("com\\.google.*")
+                includeGroupByRegex("androidx.*")
             }
         }
         maven("https://androidx.dev/storage/compose-compiler/repository") {
@@ -86,7 +92,11 @@ include(":feature:media-picker")
 include(":feature:quick-tiles")
 include(":feature:settings")
 include(":feature:easter-egg")
-include(":feature:svg")
+include(":feature:svg-maker")
+include(":feature:format-conversion")
+include(":feature:document-scanner")
+include(":feature:scan-qr-code")
+include(":feature:image-stacking")
 
 include(":feature:root")
 

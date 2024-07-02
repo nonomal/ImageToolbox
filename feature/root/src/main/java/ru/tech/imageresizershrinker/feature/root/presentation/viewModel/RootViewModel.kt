@@ -32,13 +32,13 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import dev.olshevski.navigation.reimagined.navController
 import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.onEach
-import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
 import org.w3c.dom.Element
 import ru.tech.imageresizershrinker.core.domain.APP_RELEASES
 import ru.tech.imageresizershrinker.core.domain.dispatchers.DispatchersHolder
 import ru.tech.imageresizershrinker.core.domain.image.ImageGetter
+import ru.tech.imageresizershrinker.core.domain.model.PerformanceClass
 import ru.tech.imageresizershrinker.core.domain.saving.FileController
 import ru.tech.imageresizershrinker.core.filters.domain.FavoriteFiltersInteractor
 import ru.tech.imageresizershrinker.core.resources.BuildConfig
@@ -85,8 +85,8 @@ class RootViewModel @Inject constructor(
 
     private val _cancelledUpdate = mutableStateOf(false)
 
-    private val _shouldShowDialog = mutableStateOf(true)
-    val shouldShowDialog by _shouldShowDialog
+    private val _shouldShowExitDialog = mutableStateOf(true)
+    val shouldShowDialog by _shouldShowExitDialog
 
     private val _tag = mutableStateOf("")
     val tag by _tag
@@ -110,7 +110,7 @@ class RootViewModel @Inject constructor(
 
     fun toggleShowUpdateDialog() {
         viewModelScope.launch {
-            settingsManager.toggleShowDialog()
+            settingsManager.toggleShowUpdateDialogOnStartup()
         }
     }
 
@@ -128,19 +128,19 @@ class RootViewModel @Inject constructor(
     }
 
     fun tryGetUpdate(
-        newRequest: Boolean = false,
-        installedFromMarket: Boolean,
+        isNewRequest: Boolean = false,
+        isInstalledFromMarket: Boolean,
         onNoUpdates: () -> Unit = {}
     ) {
-        if (settingsState.appOpenCount < 2 && !newRequest) return
+        if (settingsState.appOpenCount < 2 && !isNewRequest) return
 
         val showDialog = settingsState.showUpdateDialogOnStartup
-        if (installedFromMarket) {
+        if (isInstalledFromMarket) {
             if (showDialog) {
-                _showUpdateDialog.value = newRequest
+                _showUpdateDialog.value = isNewRequest
             }
         } else {
-            if (!_cancelledUpdate.value || newRequest) {
+            if (!_cancelledUpdate.value || isNewRequest) {
                 viewModelScope.launch {
                     checkForUpdates(showDialog, onNoUpdates)
                 }
@@ -283,7 +283,9 @@ class RootViewModel @Inject constructor(
     fun updateUris(uris: List<Uri>?) {
         _uris.value = uris
 
-        if (!uris.isNullOrEmpty()) _showSelectDialog.value = true
+        if (!uris.isNullOrEmpty() || (uris.isNullOrEmpty() && extraImageType != null)) {
+            _showSelectDialog.value = true
+        }
     }
 
     fun updateExtraImageType(type: String?) {
@@ -296,21 +298,22 @@ class RootViewModel @Inject constructor(
     ) {
         viewModelScope.launch {
             toastHostState.showToast(
-                message = message, icon = icon
+                message = message,
+                icon = icon
             )
         }
     }
 
-    fun shouldShowExitDialog(b: Boolean) {
-        _shouldShowDialog.value = b
+    fun cancelShowingExitDialog() {
+        _shouldShowExitDialog.update { false }
     }
 
     fun toggleAllowBetas(installedFromMarket: Boolean) {
         viewModelScope.launch {
             settingsManager.toggleAllowBetas()
             tryGetUpdate(
-                newRequest = true,
-                installedFromMarket = installedFromMarket
+                isNewRequest = true,
+                isInstalledFromMarket = installedFromMarket
             )
         }
     }
@@ -334,5 +337,23 @@ class RootViewModel @Inject constructor(
     }
 
     fun getSettingsInteractor(): SettingsInteractor = settingsManager
+
+    fun adjustPerformance(performanceClass: PerformanceClass) {
+        viewModelScope.launch {
+            settingsManager.adjustPerformance(performanceClass)
+        }
+    }
+
+    fun registerDonateDialogOpen() {
+        viewModelScope.launch {
+            settingsManager.registerDonateDialogOpen()
+        }
+    }
+
+    fun notShowDonateDialogAgain() {
+        viewModelScope.launch {
+            settingsManager.setNotShowDonateDialogAgain()
+        }
+    }
 
 }

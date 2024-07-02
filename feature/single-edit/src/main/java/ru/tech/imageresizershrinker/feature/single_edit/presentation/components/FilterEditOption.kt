@@ -86,8 +86,8 @@ import ru.tech.imageresizershrinker.core.ui.widget.other.EnhancedTopAppBar
 import ru.tech.imageresizershrinker.core.ui.widget.other.EnhancedTopAppBarType
 import ru.tech.imageresizershrinker.core.ui.widget.other.LocalToastHostState
 import ru.tech.imageresizershrinker.core.ui.widget.other.showError
-import ru.tech.imageresizershrinker.core.ui.widget.text.Marquee
 import ru.tech.imageresizershrinker.core.ui.widget.text.TitleItem
+import ru.tech.imageresizershrinker.core.ui.widget.text.marquee
 import ru.tech.imageresizershrinker.feature.filters.presentation.components.AddFiltersSheet
 import ru.tech.imageresizershrinker.feature.filters.presentation.components.FilterItem
 import ru.tech.imageresizershrinker.feature.filters.presentation.components.FilterReorderSheet
@@ -101,7 +101,6 @@ fun FilterEditOption(
     useScaffold: Boolean,
     bitmap: Bitmap?,
     onGetBitmap: (Bitmap) -> Unit,
-    onRequestFiltering: suspend (Bitmap, List<UiFilter<*>>) -> Bitmap?,
     onRequestMappingFilters: (List<UiFilter<*>>) -> List<Transformation<Bitmap>>,
     filterList: List<UiFilter<*>>,
     updateFilter: (Any, Int, (Throwable) -> Unit) -> Unit,
@@ -115,17 +114,17 @@ fun FilterEditOption(
     bitmap?.let {
         val scaffoldState = rememberBottomSheetScaffoldState()
 
-        val showFilterSheet = rememberSaveable { mutableStateOf(false) }
-        val showReorderSheet = rememberSaveable { mutableStateOf(false) }
+        var showFilterSheet by rememberSaveable { mutableStateOf(false) }
+        var showReorderSheet by rememberSaveable { mutableStateOf(false) }
 
         var stateBitmap by remember(bitmap, visible) { mutableStateOf(bitmap) }
 
-        val showColorPicker = remember { mutableStateOf(false) }
-        var tempColor by remember { mutableStateOf(Color.Black) }
+        var showColorPicker by rememberSaveable { mutableStateOf(false) }
+        var tempColor by rememberSaveable(showColorPicker) { mutableStateOf(Color.Black) }
 
         LaunchedEffect(visible) {
             if (visible && filterList.isEmpty()) {
-                showFilterSheet.value = true
+                showFilterSheet = true
             }
         }
 
@@ -163,7 +162,7 @@ fun FilterEditOption(
                                         }
                                     },
                                     onLongPress = {
-                                        showReorderSheet.value = true
+                                        showReorderSheet = true
                                     },
                                     backgroundColor = MaterialTheme.colorScheme.surface,
                                     showDragHandle = false,
@@ -174,7 +173,7 @@ fun FilterEditOption(
                             }
                             EnhancedButton(
                                 containerColor = MaterialTheme.colorScheme.mixedContainer,
-                                onClick = { showFilterSheet.value = true },
+                                onClick = { showFilterSheet = true },
                                 modifier = Modifier.padding(horizontal = 16.dp)
                             ) {
                                 Icon(
@@ -191,7 +190,7 @@ fun FilterEditOption(
             fabButtons = {
                 EnhancedFloatingActionButton(
                     onClick = {
-                        showFilterSheet.value = true
+                        showFilterSheet = true
                     },
                     containerColor = MaterialTheme.colorScheme.primaryContainer,
                 ) {
@@ -210,7 +209,7 @@ fun FilterEditOption(
                             .padding(horizontal = 16.dp)
                             .pointerInput(Unit) {
                                 detectTapGestures {
-                                    showFilterSheet.value = true
+                                    showFilterSheet = true
                                 }
                             }
                     )
@@ -220,7 +219,7 @@ fun FilterEditOption(
                         contentColor = LocalContentColor.current,
                         enableAutoShadowAndBorder = false,
                         onClick = {
-                            showColorPicker.value = true
+                            showColorPicker = true
                         },
                     ) {
                         Icon(
@@ -255,11 +254,10 @@ fun FilterEditOption(
                         }
                     },
                     title = {
-                        Marquee {
-                            Text(
-                                text = stringResource(R.string.filter),
-                            )
-                        }
+                        Text(
+                            text = stringResource(R.string.filter),
+                            modifier = Modifier.marquee()
+                        )
                     }
                 )
             }
@@ -300,6 +298,7 @@ fun FilterEditOption(
 
         AddFiltersSheet(
             visible = showFilterSheet,
+            onVisibleChange = { showFilterSheet = it },
             previewBitmap = stateBitmap,
             onFilterPicked = {
                 scope.launch {
@@ -312,23 +311,23 @@ fun FilterEditOption(
                     scaffoldState.bottomSheetState.expand()
                 }
                 addFilter(it)
-            },
-            onRequestFilterMapping = {
-                onRequestMappingFilters(listOf(it)).first().toCoil()
-            },
-            onRequestPreview = { bitmap, filters, _ ->
-                onRequestFiltering(bitmap, filters)
             }
         )
 
         FilterReorderSheet(
             filterList = filterList,
             visible = showReorderSheet,
+            onDismiss = {
+                showReorderSheet = false
+            },
             updateOrder = updateOrder
         )
 
         PickColorFromImageSheet(
             visible = showColorPicker,
+            onDismiss = {
+                showColorPicker = false
+            },
             bitmap = stateBitmap,
             onColorChange = { tempColor = it },
             color = tempColor

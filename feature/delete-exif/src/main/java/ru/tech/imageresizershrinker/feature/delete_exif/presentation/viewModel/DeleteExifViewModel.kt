@@ -29,21 +29,20 @@ import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 import ru.tech.imageresizershrinker.core.domain.dispatchers.DispatchersHolder
 import ru.tech.imageresizershrinker.core.domain.image.ImageCompressor
 import ru.tech.imageresizershrinker.core.domain.image.ImageGetter
 import ru.tech.imageresizershrinker.core.domain.image.ImageScaler
 import ru.tech.imageresizershrinker.core.domain.image.ShareProvider
+import ru.tech.imageresizershrinker.core.domain.image.model.MetadataTag
 import ru.tech.imageresizershrinker.core.domain.saving.FileController
 import ru.tech.imageresizershrinker.core.domain.saving.model.ImageSaveTarget
 import ru.tech.imageresizershrinker.core.domain.saving.model.SaveResult
+import ru.tech.imageresizershrinker.core.domain.utils.smartJob
 import ru.tech.imageresizershrinker.core.ui.transformation.ImageInfoTransformation
 import ru.tech.imageresizershrinker.core.ui.utils.BaseViewModel
 import ru.tech.imageresizershrinker.core.ui.utils.state.update
 import javax.inject.Inject
-import kotlin.random.Random
 
 @HiltViewModel
 class DeleteExifViewModel @Inject constructor(
@@ -74,7 +73,7 @@ class DeleteExifViewModel @Inject constructor(
     private val _selectedUri: MutableState<Uri?> = mutableStateOf(null)
     val selectedUri by _selectedUri
 
-    private val _selectedTags: MutableState<List<String>> = mutableStateOf(emptyList())
+    private val _selectedTags: MutableState<List<MetadataTag>> = mutableStateOf(emptyList())
     val selectedTags by _selectedTags
 
     fun updateUris(
@@ -89,30 +88,28 @@ class DeleteExifViewModel @Inject constructor(
     }
 
     fun updateUrisSilently(removedUri: Uri) {
-        viewModelScope.launch {
-            withContext(defaultDispatcher) {
-                _uris.value = uris
-                if (_selectedUri.value == removedUri) {
-                    val index = uris?.indexOf(removedUri) ?: -1
-                    if (index == 0) {
-                        uris?.getOrNull(1)?.let {
-                            _selectedUri.value = it
-                            _bitmap.value =
-                                imageGetter.getImage(it.toString(), originalSize = false)?.image
-                        }
-                    } else {
-                        uris?.getOrNull(index - 1)?.let {
-                            _selectedUri.value = it
-                            _bitmap.value =
-                                imageGetter.getImage(it.toString(), originalSize = false)?.image
-                        }
+        viewModelScope.launch(defaultDispatcher) {
+            _uris.value = uris
+            if (_selectedUri.value == removedUri) {
+                val index = uris?.indexOf(removedUri) ?: -1
+                if (index == 0) {
+                    uris?.getOrNull(1)?.let {
+                        _selectedUri.value = it
+                        _bitmap.value =
+                            imageGetter.getImage(it.toString(), originalSize = false)?.image
+                    }
+                } else {
+                    uris?.getOrNull(index - 1)?.let {
+                        _selectedUri.value = it
+                        _bitmap.value =
+                            imageGetter.getImage(it.toString(), originalSize = false)?.image
                     }
                 }
-                val u = _uris.value?.toMutableList()?.apply {
-                    remove(removedUri)
-                }
-                _uris.value = u
             }
+            val u = _uris.value?.toMutableList()?.apply {
+                remove(removedUri)
+            }
+            _uris.value = u
         }
     }
 
@@ -126,12 +123,15 @@ class DeleteExifViewModel @Inject constructor(
         }
     }
 
-    private var savingJob: Job? = null
+    private var savingJob: Job? by smartJob {
+        _isSaving.update { false }
+    }
 
     fun saveBitmaps(
-        onResult: (List<SaveResult>, String) -> Unit
-    ) = viewModelScope.launch {
-        withContext(defaultDispatcher) {
+        oneTimeSaveLocationUri: String?,
+        onResult: (List<SaveResult>) -> Unit
+    ) {
+        savingJob = viewModelScope.launch(defaultDispatcher) {
             _isSaving.value = true
             val results = mutableListOf<SaveResult>()
             _done.value = 0
@@ -142,7 +142,7 @@ class DeleteExifViewModel @Inject constructor(
                     val metadata: ExifInterface? = if (selectedTags.isNotEmpty()) {
                         it.metadata?.apply {
                             selectedTags.forEach { tag ->
-                                setAttribute(tag, null)
+                                setAttribute(tag.key, null)
                             }
                         }
                     } else null
@@ -156,7 +156,8 @@ class DeleteExifViewModel @Inject constructor(
                                 metadata = metadata,
                                 data = imageCompressor.compressAndTransform(it.image, it.imageInfo)
                             ),
-                            keepOriginalMetadata = false
+                            keepOriginalMetadata = false,
+                            oneTimeSaveLocationUri = oneTimeSaveLocationUri
                         )
                     )
                 } ?: results.add(
@@ -165,41 +166,31 @@ class DeleteExifViewModel @Inject constructor(
 
                 _done.value += 1
             }
-            onResult(results, fileController.savingPath)
+            onResult(results)
             _isSaving.value = false
         }
-    }.also {
-        _isSaving.value = false
-        savingJob?.cancel()
-        savingJob = it
     }
 
     fun setUri(
         uri: Uri,
         onError: (Throwable) -> Unit
-    ) {
-        viewModelScope.launch {
-            withContext(defaultDispatcher) {
-                _isImageLoading.value = true
-                _selectedUri.value = uri
-                imageGetter.getImageAsync(
-                    uri = uri.toString(),
-                    originalSize = false,
-                    onGetImage = {
-                        updateBitmap(it.image)
-                    },
-                    onError = {
-                        _isImageLoading.value = false
-                        onError(it)
-                    }
-                )
+    ) = viewModelScope.launch(defaultDispatcher) {
+        _isImageLoading.value = true
+        _selectedUri.value = uri
+        imageGetter.getImageAsync(
+            uri = uri.toString(),
+            originalSize = false,
+            onGetImage = {
+                updateBitmap(it.image)
+            },
+            onError = {
+                _isImageLoading.value = false
+                onError(it)
             }
-        }
+        )
     }
 
     fun shareBitmaps(onComplete: () -> Unit) {
-        _isSaving.value = false
-        savingJob?.cancel()
         savingJob = viewModelScope.launch {
             _isSaving.value = true
             shareProvider.shareImages(
@@ -229,8 +220,6 @@ class DeleteExifViewModel @Inject constructor(
     }
 
     fun cacheCurrentImage(onComplete: (Uri) -> Unit) {
-        _isSaving.value = false
-        savingJob?.cancel()
         savingJob = viewModelScope.launch {
             _isSaving.value = true
             imageGetter.getImage(
@@ -238,8 +227,7 @@ class DeleteExifViewModel @Inject constructor(
             )?.let { (image, imageInfo) ->
                 shareProvider.cacheImage(
                     image = image,
-                    imageInfo = imageInfo.copy(originalUri = selectedUri.toString()),
-                    name = Random.nextInt().toString()
+                    imageInfo = imageInfo.copy(originalUri = selectedUri.toString())
                 )?.let { uri ->
                     onComplete(uri.toUri())
                 }
@@ -248,11 +236,36 @@ class DeleteExifViewModel @Inject constructor(
         }
     }
 
-    fun addTag(tag: String) {
+    fun addTag(tag: MetadataTag) {
         if (tag in selectedTags) {
             _selectedTags.update { it - tag }
         } else {
             _selectedTags.update { it + tag }
+        }
+    }
+
+    fun cacheImages(
+        onComplete: (List<Uri>) -> Unit
+    ) {
+        savingJob = viewModelScope.launch {
+            _isSaving.value = true
+            _done.value = 0
+            val list = mutableListOf<Uri>()
+            uris?.forEach {
+                imageGetter.getImage(
+                    it.toString()
+                )?.let { (image, imageInfo) ->
+                    shareProvider.cacheImage(
+                        image = image,
+                        imageInfo = imageInfo.copy(originalUri = it.toString())
+                    )?.let { uri ->
+                        list.add(uri.toUri())
+                    }
+                }
+                _done.value++
+            }
+            onComplete(list)
+            _isSaving.value = false
         }
     }
 

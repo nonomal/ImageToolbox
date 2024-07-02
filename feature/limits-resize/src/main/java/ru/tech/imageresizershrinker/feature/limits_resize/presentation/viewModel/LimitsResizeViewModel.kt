@@ -29,8 +29,6 @@ import androidx.exifinterface.media.ExifInterface
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 import ru.tech.imageresizershrinker.core.domain.dispatchers.DispatchersHolder
 import ru.tech.imageresizershrinker.core.domain.image.ImageCompressor
 import ru.tech.imageresizershrinker.core.domain.image.ImageGetter
@@ -43,13 +41,14 @@ import ru.tech.imageresizershrinker.core.domain.model.IntegerSize
 import ru.tech.imageresizershrinker.core.domain.saving.FileController
 import ru.tech.imageresizershrinker.core.domain.saving.model.ImageSaveTarget
 import ru.tech.imageresizershrinker.core.domain.saving.model.SaveResult
+import ru.tech.imageresizershrinker.core.domain.saving.model.onSuccess
+import ru.tech.imageresizershrinker.core.domain.utils.smartJob
 import ru.tech.imageresizershrinker.core.ui.transformation.ImageInfoTransformation
 import ru.tech.imageresizershrinker.core.ui.utils.BaseViewModel
 import ru.tech.imageresizershrinker.core.ui.utils.state.update
 import ru.tech.imageresizershrinker.feature.limits_resize.domain.LimitsImageScaler
 import ru.tech.imageresizershrinker.feature.limits_resize.domain.LimitsResizeType
 import javax.inject.Inject
-import kotlin.random.Random
 
 @HiltViewModel
 class LimitsResizeViewModel @Inject constructor(
@@ -96,7 +95,7 @@ class LimitsResizeViewModel @Inject constructor(
         mutableStateOf(LimitsResizeType.Recode())
     val resizeType by _resizeType
 
-    fun setMime(imageFormat: ImageFormat) {
+    fun setImageFormat(imageFormat: ImageFormat) {
         _imageInfo.value = _imageInfo.value.copy(imageFormat = imageFormat)
     }
 
@@ -114,7 +113,7 @@ class LimitsResizeViewModel @Inject constructor(
                     originalSize = true,
                     onGetImage = {
                         updateBitmap(it.image)
-                        setMime(it.imageInfo.imageFormat)
+                        setImageFormat(it.imageInfo.imageFormat)
                     },
                     onError = onError
                 )
@@ -123,28 +122,26 @@ class LimitsResizeViewModel @Inject constructor(
     }
 
     fun updateUrisSilently(removedUri: Uri) {
-        viewModelScope.launch {
-            withContext(defaultDispatcher) {
-                _uris.value = uris
-                if (_selectedUri.value == removedUri) {
-                    val index = uris?.indexOf(removedUri) ?: -1
-                    if (index == 0) {
-                        uris?.getOrNull(1)?.let {
-                            _selectedUri.value = it
-                            _bitmap.value = imageGetter.getImage(it.toString())?.image
-                        }
-                    } else {
-                        uris?.getOrNull(index - 1)?.let {
-                            _selectedUri.value = it
-                            _bitmap.value = imageGetter.getImage(it.toString())?.image
-                        }
+        viewModelScope.launch(defaultDispatcher) {
+            _uris.value = uris
+            if (_selectedUri.value == removedUri) {
+                val index = uris?.indexOf(removedUri) ?: -1
+                if (index == 0) {
+                    uris?.getOrNull(1)?.let {
+                        _selectedUri.value = it
+                        _bitmap.value = imageGetter.getImage(it.toString())?.image
+                    }
+                } else {
+                    uris?.getOrNull(index - 1)?.let {
+                        _selectedUri.value = it
+                        _bitmap.value = imageGetter.getImage(it.toString())?.image
                     }
                 }
-                val u = _uris.value?.toMutableList()?.apply {
-                    remove(removedUri)
-                }
-                _uris.value = u
             }
+            val u = _uris.value?.toMutableList()?.apply {
+                remove(removedUri)
+            }
+            _uris.value = u
         }
     }
 
@@ -164,14 +161,18 @@ class LimitsResizeViewModel @Inject constructor(
 
     fun setKeepExif(boolean: Boolean) {
         _keepExif.value = boolean
+        registerChanges()
     }
 
-    private var savingJob: Job? = null
+    private var savingJob: Job? by smartJob {
+        _isSaving.update { false }
+    }
 
     fun saveBitmaps(
-        onResult: (List<SaveResult>, String) -> Unit
-    ) = viewModelScope.launch {
-        withContext(defaultDispatcher) {
+        oneTimeSaveLocationUri: String?,
+        onResult: (List<SaveResult>) -> Unit
+    ) {
+        savingJob = viewModelScope.launch(defaultDispatcher) {
             _isSaving.value = true
             val results = mutableListOf<SaveResult>()
             _done.value = 0
@@ -203,7 +204,9 @@ class LimitsResizeViewModel @Inject constructor(
                                         height = localBitmap.height
                                     )
                                 )
-                            ), keepOriginalMetadata = keepExif
+                            ),
+                            keepOriginalMetadata = keepExif,
+                            oneTimeSaveLocationUri = oneTimeSaveLocationUri
                         )
                     )
                 } ?: results.add(
@@ -212,30 +215,27 @@ class LimitsResizeViewModel @Inject constructor(
 
                 _done.value += 1
             }
-            onResult(results, fileController.savingPath)
+            onResult(results.onSuccess(::registerSave))
             _isSaving.value = false
         }
-    }.also {
-        _isSaving.value = false
-        savingJob?.cancel()
-        savingJob = it
     }
 
     fun setBitmap(uri: Uri) {
-        viewModelScope.launch {
-            withContext(defaultDispatcher) {
-                _isImageLoading.value = true
-                updateBitmap(imageGetter.getImage(uri.toString())?.image)
-                _selectedUri.value = uri
-                _isImageLoading.value = false
-            }
+        viewModelScope.launch(defaultDispatcher) {
+            _isImageLoading.value = true
+            updateBitmap(imageGetter.getImage(uri.toString())?.image)
+            _selectedUri.value = uri
+            _isImageLoading.value = false
         }
     }
 
 
     private fun updateCanSave() {
-        _canSave.value =
-            _bitmap.value != null && (_imageInfo.value.height != 0 && _imageInfo.value.width != 0)
+        _canSave.update {
+            _bitmap.value != null && (_imageInfo.value.height != 0 || _imageInfo.value.width != 0)
+        }
+
+        registerChanges()
     }
 
     fun updateWidth(i: Int) {
@@ -250,7 +250,7 @@ class LimitsResizeViewModel @Inject constructor(
 
     fun shareBitmaps(onComplete: () -> Unit) {
         _isSaving.value = false
-        viewModelScope.launch {
+        savingJob = viewModelScope.launch {
             _isSaving.value = true
             shareProvider.shareImages(
                 uris = uris?.map { it.toString() } ?: emptyList(),
@@ -280,18 +280,17 @@ class LimitsResizeViewModel @Inject constructor(
                     }
                 }
             )
-        }.also {
-            savingJob?.cancel()
-            savingJob = it
         }
     }
 
     fun setQuality(quality: Quality) {
         _imageInfo.value = _imageInfo.value.copy(quality = quality)
+        registerChanges()
     }
 
     fun setResizeType(resizeType: LimitsResizeType) {
         _resizeType.value = resizeType
+        registerChanges()
     }
 
     fun cancelSaving() {
@@ -302,6 +301,7 @@ class LimitsResizeViewModel @Inject constructor(
 
     fun toggleAutoRotateLimitBox() {
         _resizeType.update { it.copy(!it.autoRotateLimitBox) }
+        registerChanges()
     }
 
     fun setImageScaleMode(imageScaleMode: ImageScaleMode) {
@@ -310,11 +310,10 @@ class LimitsResizeViewModel @Inject constructor(
                 imageScaleMode = imageScaleMode
             )
         }
+        registerChanges()
     }
 
     fun cacheCurrentImage(onComplete: (Uri) -> Unit) {
-        _isSaving.value = false
-        savingJob?.cancel()
         savingJob = viewModelScope.launch {
             _isSaving.value = true
             imageGetter.getImage(
@@ -335,12 +334,49 @@ class LimitsResizeViewModel @Inject constructor(
             }?.let { (image, imageInfo) ->
                 shareProvider.cacheImage(
                     image = image,
-                    imageInfo = imageInfo.copy(originalUri = selectedUri.toString()),
-                    name = Random.nextInt().toString()
+                    imageInfo = imageInfo.copy(originalUri = selectedUri.toString())
                 )?.let { uri ->
                     onComplete(uri.toUri())
                 }
             }
+            _isSaving.value = false
+        }
+    }
+
+    fun cacheImages(
+        onComplete: (List<Uri>) -> Unit
+    ) {
+        savingJob = viewModelScope.launch {
+            _isSaving.value = true
+            _done.value = 0
+            val list = mutableListOf<Uri>()
+            uris?.forEach { uri ->
+                imageGetter.getImage(
+                    uri = uri.toString()
+                )?.image?.let { bitmap ->
+                    imageScaler.scaleImage(
+                        image = bitmap,
+                        width = imageInfo.width,
+                        height = imageInfo.height,
+                        resizeType = resizeType,
+                        imageScaleMode = imageInfo.imageScaleMode
+                    )
+                }?.let {
+                    it to imageInfo.copy(
+                        width = it.width,
+                        height = it.height
+                    )
+                }?.let { (image, imageInfo) ->
+                    shareProvider.cacheImage(
+                        image = image,
+                        imageInfo = imageInfo.copy(originalUri = uri.toString())
+                    )?.let { uri ->
+                        list.add(uri.toUri())
+                    }
+                }
+                _done.value += 1
+            }
+            onComplete(list)
             _isSaving.value = false
         }
     }

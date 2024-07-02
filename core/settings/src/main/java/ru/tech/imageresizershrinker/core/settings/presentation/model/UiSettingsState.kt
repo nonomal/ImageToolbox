@@ -33,15 +33,18 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.core.net.toUri
+import com.t8rin.dynamic.theme.ColorBlindType
 import com.t8rin.dynamic.theme.ColorTuple
 import com.t8rin.dynamic.theme.PaletteStyle
 import kotlinx.collections.immutable.ImmutableList
 import kotlinx.coroutines.launch
 import ru.tech.imageresizershrinker.core.domain.image.model.ImageScaleMode
+import ru.tech.imageresizershrinker.core.domain.image.model.Preset
 import ru.tech.imageresizershrinker.core.settings.domain.model.ColorHarmonizer
 import ru.tech.imageresizershrinker.core.settings.domain.model.CopyToClipboardMode
 import ru.tech.imageresizershrinker.core.settings.domain.model.DomainAspectRatio
 import ru.tech.imageresizershrinker.core.settings.domain.model.NightMode
+import ru.tech.imageresizershrinker.core.settings.domain.model.OneTimeSaveLocation
 import ru.tech.imageresizershrinker.core.settings.domain.model.SettingsState
 import ru.tech.imageresizershrinker.core.settings.domain.model.SwitchType
 
@@ -110,7 +113,12 @@ data class UiSettingsState(
     val showSettingsInLandscape: Boolean,
     val useFullscreenSettings: Boolean,
     val switchType: SwitchType,
-    val defaultDrawLineWidth: Float
+    val defaultDrawLineWidth: Float,
+    val oneTimeSaveLocations: List<OneTimeSaveLocation>,
+    val openEditInsteadOfPreview: Boolean,
+    val canEnterPresetsByTextField: Boolean,
+    val donateDialogOpenCount: Int?,
+    val colorBlindType: ColorBlindType?
 )
 
 fun UiSettingsState.isFirstLaunch(
@@ -176,16 +184,14 @@ fun SettingsState.toUiState(
         borderWidth = animateDpAsState(borderWidth.dp).value,
         presets = remember(presets) {
             derivedStateOf {
-                presets.mapNotNull { it.value() }
+                presets.mapNotNull(Preset::value)
             }
         }.value,
         fabAlignment = fabAlignment.toAlignment(),
         showUpdateDialogOnStartup = showUpdateDialogOnStartup,
         selectedEmoji = remember(selectedEmojiIndex, allEmojis) {
             derivedStateOf {
-                selectedEmojiIndex?.let {
-                    allEmojis.getOrNull(it)
-                }
+                selectedEmojiIndex?.let(allEmojis::getOrNull)
             }
         }.value,
         picturePickerMode = PicturePickerMode.fromInt(picturePickerModeInt),
@@ -248,9 +254,7 @@ fun SettingsState.toUiState(
         useRandomEmojis = useRandomEmojis,
         iconShape = remember(iconShape) {
             derivedStateOf {
-                iconShape?.let {
-                    allIconShapes.getOrNull(it)
-                }
+                iconShape?.let(allIconShapes::getOrNull)
             }
         }.value,
         useEmojiAsPrimaryColor = useEmojiAsPrimaryColor,
@@ -264,7 +268,18 @@ fun SettingsState.toUiState(
         showSettingsInLandscape = showSettingsInLandscape,
         useFullscreenSettings = useFullscreenSettings,
         switchType = switchType,
-        defaultDrawLineWidth = defaultDrawLineWidth
+        defaultDrawLineWidth = defaultDrawLineWidth,
+        oneTimeSaveLocations = oneTimeSaveLocations,
+        openEditInsteadOfPreview = openEditInsteadOfPreview,
+        canEnterPresetsByTextField = canEnterPresetsByTextField,
+        donateDialogOpenCount = donateDialogOpenCount.takeIf { it >= 0 },
+        colorBlindType = remember(colorBlindType) {
+            derivedStateOf {
+                colorBlindType?.let {
+                    ColorBlindType.entries.getOrNull(it)
+                }
+            }
+        }.value,
     )
 }
 
@@ -291,7 +306,7 @@ private fun String?.toColorTupleList(): List<ColorTuple> {
 
 private fun Int.toColor() = Color(this)
 
-private fun String.asColorTuple(): ColorTuple {
+fun String.asColorTuple(): ColorTuple {
     val colorTuple = split("*")
     return ColorTuple(
         primary = colorTuple.getOrNull(0)?.toIntOrNull()?.let { Color(it) }

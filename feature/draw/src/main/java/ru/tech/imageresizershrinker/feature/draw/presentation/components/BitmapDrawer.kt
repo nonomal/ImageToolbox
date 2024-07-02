@@ -18,8 +18,6 @@
 package ru.tech.imageresizershrinker.feature.draw.presentation.components
 
 import android.graphics.Bitmap
-import android.graphics.BlurMaskFilter
-import android.graphics.Matrix
 import android.graphics.PorterDuff
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.border
@@ -43,22 +41,18 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.isSpecified
 import androidx.compose.ui.geometry.isUnspecified
 import androidx.compose.ui.geometry.takeOrElse
-import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Canvas
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.Paint
-import androidx.compose.ui.graphics.PaintingStyle
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.PathMeasure
-import androidx.compose.ui.graphics.StrokeCap
-import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.graphics.asAndroidPath
+import androidx.compose.ui.graphics.asComposePaint
 import androidx.compose.ui.graphics.asComposePath
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.nativeCanvas
@@ -80,7 +74,6 @@ import ru.tech.imageresizershrinker.core.filters.presentation.model.UiStackBlurF
 import ru.tech.imageresizershrinker.core.settings.presentation.provider.LocalSettingsState
 import ru.tech.imageresizershrinker.core.ui.theme.outlineVariant
 import ru.tech.imageresizershrinker.core.ui.utils.helper.ImageUtils.createScaledBitmap
-import ru.tech.imageresizershrinker.core.ui.utils.helper.rotateVector
 import ru.tech.imageresizershrinker.core.ui.utils.helper.scaleToFitCanvas
 import ru.tech.imageresizershrinker.core.ui.widget.modifier.observePointersCountWithOffset
 import ru.tech.imageresizershrinker.core.ui.widget.modifier.smartDelayAfterDownInMillis
@@ -88,10 +81,17 @@ import ru.tech.imageresizershrinker.core.ui.widget.modifier.transparencyChecker
 import ru.tech.imageresizershrinker.feature.draw.domain.DrawMode
 import ru.tech.imageresizershrinker.feature.draw.domain.DrawPathMode
 import ru.tech.imageresizershrinker.feature.draw.domain.Pt
-import kotlin.math.abs
-import kotlin.math.max
-import kotlin.math.min
+import ru.tech.imageresizershrinker.feature.draw.presentation.components.utils.clipBitmap
+import ru.tech.imageresizershrinker.feature.draw.presentation.components.utils.copy
+import ru.tech.imageresizershrinker.feature.draw.presentation.components.utils.drawRepeatedImageOnPath
+import ru.tech.imageresizershrinker.feature.draw.presentation.components.utils.drawRepeatedTextOnPath
+import ru.tech.imageresizershrinker.feature.draw.presentation.components.utils.overlay
+import ru.tech.imageresizershrinker.feature.draw.presentation.components.utils.pathEffectPaint
+import ru.tech.imageresizershrinker.feature.draw.presentation.components.utils.rememberPaint
+import ru.tech.imageresizershrinker.feature.draw.presentation.components.utils.rememberPathEffectPaint
+import ru.tech.imageresizershrinker.feature.draw.presentation.components.utils.rememberPathHelper
 import android.graphics.Canvas as AndroidCanvas
+import android.graphics.Path as NativePath
 
 
 @Composable
@@ -112,7 +112,7 @@ fun BitmapDrawer(
     onDrawFinish: () -> Unit = {},
     backgroundColor: Color,
     panEnabled: Boolean,
-    drawColor: Color
+    drawColor: Color,
 ) {
     val scope = rememberCoroutineScope()
 
@@ -244,7 +244,7 @@ fun BitmapDrawer(
             }
 
             fun transformationsForMode(
-                drawMode: DrawMode
+                drawMode: DrawMode,
             ): List<UiFilter<*>> = when (drawMode) {
                 is DrawMode.PathEffect.PrivacyBlur -> {
                     listOf(
@@ -276,76 +276,15 @@ fun BitmapDrawer(
                 else -> emptyList()
             }
 
-            val drawPaint by remember(
-                strokeWidth,
-                isEraserOn,
-                drawColor,
-                brushSoftness,
-                drawMode,
-                canvasSize,
-                drawPathMode
-            ) {
-                derivedStateOf {
-                    val isRect = listOf(
-                        DrawPathMode.OutlinedRect,
-                        DrawPathMode.OutlinedOval,
-                        DrawPathMode.Rect,
-                        DrawPathMode.Oval,
-                        DrawPathMode.Lasso
-                    ).any { drawPathMode::class.isInstance(it) }
-
-                    val isFilled = listOf(
-                        DrawPathMode.Rect,
-                        DrawPathMode.Oval,
-                        DrawPathMode.Lasso
-                    ).any { drawPathMode::class.isInstance(it) }
-
-                    Paint().apply {
-                        blendMode = if (!isEraserOn) blendMode else BlendMode.Clear
-                        if (isEraserOn) {
-                            style = PaintingStyle.Stroke
-                            this.strokeWidth = strokeWidth.toPx(canvasSize)
-                            strokeCap = StrokeCap.Round
-                            strokeJoin = StrokeJoin.Round
-                        } else {
-                            if (isFilled) {
-                                style = PaintingStyle.Fill
-                            } else {
-                                style = PaintingStyle.Stroke
-                                this.strokeWidth = strokeWidth.toPx(canvasSize)
-                                if (drawMode is DrawMode.Highlighter || isRect) {
-                                    strokeCap = StrokeCap.Square
-                                } else {
-                                    strokeCap = StrokeCap.Round
-                                    strokeJoin = StrokeJoin.Round
-                                }
-                            }
-                        }
-                        color = if (drawMode is DrawMode.PathEffect) {
-                            Color.Transparent
-                        } else drawColor
-                        alpha = drawColor.alpha
-
-                    }.asFrameworkPaint().apply {
-                        if (drawMode is DrawMode.Neon && !isEraserOn) {
-                            this.color = Color.White.toArgb()
-                            setShadowLayer(
-                                brushSoftness.toPx(canvasSize),
-                                0f,
-                                0f,
-                                drawColor
-                                    .copy(alpha = .8f)
-                                    .toArgb()
-                            )
-                        } else if (brushSoftness.value > 0f) {
-                            maskFilter = BlurMaskFilter(
-                                brushSoftness.toPx(canvasSize),
-                                BlurMaskFilter.Blur.NORMAL
-                            )
-                        }
-                    }
-                }
-            }
+            val drawPaint by rememberPaint(
+                strokeWidth = strokeWidth,
+                isEraserOn = isEraserOn,
+                drawColor = drawColor,
+                brushSoftness = brushSoftness,
+                drawMode = drawMode,
+                canvasSize = canvasSize,
+                drawPathMode = drawPathMode
+            )
 
             var drawPath by remember(
                 drawMode,
@@ -366,6 +305,16 @@ fun BitmapDrawer(
             ) { mutableStateOf(Path()) }
 
             canvas.apply {
+                val drawHelper by rememberPathHelper(
+                    drawDownPosition = drawDownPosition,
+                    currentDrawPosition = currentDrawPosition,
+                    onPathChange = { drawPath = it },
+                    strokeWidth = strokeWidth,
+                    canvasSize = canvasSize,
+                    drawPathMode = drawPathMode,
+                    isEraserOn = isEraserOn
+                )
+
                 when (motionEvent) {
 
                     MotionEvent.Down -> {
@@ -383,229 +332,92 @@ fun BitmapDrawer(
                     }
 
                     MotionEvent.Move -> {
-                        val baseMove = {
-                            if (previousDrawPosition.isUnspecified && currentDrawPosition.isSpecified) {
-                                drawPath.moveTo(currentDrawPosition.x, currentDrawPosition.y)
-                                previousDrawPosition = currentDrawPosition
-                            }
-
-                            if (currentDrawPosition.isSpecified && previousDrawPosition.isSpecified) {
-                                drawPath.quadraticTo(
-                                    previousDrawPosition.x,
-                                    previousDrawPosition.y,
-                                    (previousDrawPosition.x + currentDrawPosition.x) / 2,
-                                    (previousDrawPosition.y + currentDrawPosition.y) / 2
-                                )
-                            }
-                            previousDrawPosition = currentDrawPosition
-                        }
-                        if (!isEraserOn) {
-                            when (drawPathMode) {
-                                DrawPathMode.DoubleLinePointingArrow,
-                                DrawPathMode.Line,
-                                DrawPathMode.LinePointingArrow -> {
-                                    if (drawDownPosition.isSpecified && currentDrawPosition.isSpecified) {
-                                        val newPath = Path().apply {
-                                            moveTo(drawDownPosition.x, drawDownPosition.y)
-                                            lineTo(currentDrawPosition.x, currentDrawPosition.y)
-                                        }
-                                        drawPathMode.drawArrowsIfNeeded(
-                                            drawPath = newPath,
-                                            strokeWidth = strokeWidth,
-                                            canvasSize = canvasSize
-                                        )
-                                        drawPath = newPath
-                                    }
-                                }
-
-                                DrawPathMode.PointingArrow,
-                                DrawPathMode.DoublePointingArrow -> {
-                                    if (previousDrawPosition.isUnspecified && currentDrawPosition.isSpecified) {
-                                        drawPath = Path()
-                                        drawPath.moveTo(
+                        drawHelper.drawPath(
+                            onDrawFreeArrow = {
+                                if (previousDrawPosition.isUnspecified && currentDrawPosition.isSpecified) {
+                                    drawPath = Path().apply {
+                                        moveTo(
                                             currentDrawPosition.x,
                                             currentDrawPosition.y
                                         )
-                                        pathWithoutTransformations = drawPath.copy()
-                                        previousDrawPosition = currentDrawPosition
                                     }
-                                    if (previousDrawPosition.isSpecified && currentDrawPosition.isSpecified) {
-                                        drawPath = pathWithoutTransformations
-                                        drawPath.quadraticTo(
-                                            previousDrawPosition.x,
-                                            previousDrawPosition.y,
-                                            (previousDrawPosition.x + currentDrawPosition.x) / 2,
-                                            (previousDrawPosition.y + currentDrawPosition.y) / 2
-                                        )
-                                        previousDrawPosition = currentDrawPosition
+                                    pathWithoutTransformations = drawPath.copy()
+                                    previousDrawPosition = currentDrawPosition
+                                }
+                                if (previousDrawPosition.isSpecified && currentDrawPosition.isSpecified) {
+                                    drawPath = pathWithoutTransformations
+                                    drawPath.quadraticTo(
+                                        previousDrawPosition.x,
+                                        previousDrawPosition.y,
+                                        (previousDrawPosition.x + currentDrawPosition.x) / 2,
+                                        (previousDrawPosition.y + currentDrawPosition.y) / 2
+                                    )
+                                    previousDrawPosition = currentDrawPosition
 
-                                        pathWithoutTransformations = drawPath.copy()
+                                    pathWithoutTransformations = drawPath.copy()
 
-                                        drawPathMode.drawArrowsIfNeeded(
-                                            drawPath = drawPath,
-                                            strokeWidth = strokeWidth,
-                                            canvasSize = canvasSize
-                                        )
-                                    }
+                                    drawArrowsIfNeeded(drawPath)
+                                }
+                            },
+                            onBaseDraw = {
+                                if (previousDrawPosition.isUnspecified && currentDrawPosition.isSpecified) {
+                                    drawPath.moveTo(currentDrawPosition.x, currentDrawPosition.y)
+                                    previousDrawPosition = currentDrawPosition
                                 }
 
-                                DrawPathMode.Rect,
-                                DrawPathMode.OutlinedRect -> {
-                                    if (drawDownPosition.isSpecified && currentDrawPosition.isSpecified) {
-                                        val top = max(drawDownPosition.y, currentDrawPosition.y)
-                                        val left = min(drawDownPosition.x, currentDrawPosition.x)
-                                        val bottom = min(drawDownPosition.y, currentDrawPosition.y)
-                                        val right = max(drawDownPosition.x, currentDrawPosition.x)
-
-                                        val newPath = Path().apply {
-                                            moveTo(left, top)
-                                            lineTo(right, top)
-                                            lineTo(right, bottom)
-                                            lineTo(left, bottom)
-                                            lineTo(left, top)
-                                        }
-                                        drawPath = newPath
-                                    }
+                                if (currentDrawPosition.isSpecified && previousDrawPosition.isSpecified) {
+                                    drawPath.quadraticTo(
+                                        previousDrawPosition.x,
+                                        previousDrawPosition.y,
+                                        (previousDrawPosition.x + currentDrawPosition.x) / 2,
+                                        (previousDrawPosition.y + currentDrawPosition.y) / 2
+                                    )
                                 }
-
-                                DrawPathMode.Oval,
-                                DrawPathMode.OutlinedOval -> {
-                                    if (drawDownPosition.isSpecified && currentDrawPosition.isSpecified) {
-                                        val newPath = Path().apply {
-                                            addOval(
-                                                Rect(
-                                                    top = max(
-                                                        drawDownPosition.y,
-                                                        currentDrawPosition.y
-                                                    ),
-                                                    left = min(
-                                                        drawDownPosition.x,
-                                                        currentDrawPosition.x
-                                                    ),
-                                                    bottom = min(
-                                                        drawDownPosition.y,
-                                                        currentDrawPosition.y
-                                                    ),
-                                                    right = max(
-                                                        drawDownPosition.x,
-                                                        currentDrawPosition.x
-                                                    ),
-                                                )
-                                            )
-                                        }
-                                        drawPath = newPath
-                                    }
-                                }
-
-                                else -> baseMove()
+                                previousDrawPosition = currentDrawPosition
                             }
-                        } else baseMove()
+                        )
 
                         motionEvent = MotionEvent.Idle
                     }
 
                     MotionEvent.Up -> {
-                        val baseMove = {
-                            PathMeasure().apply {
-                                setPath(drawPath, false)
-                            }.let {
-                                it.getPosition(it.length)
-                            }.takeOrElse { currentDrawPosition }.let { lastPoint ->
-                                drawPath.moveTo(lastPoint.x, lastPoint.y)
-                                drawPath.lineTo(currentDrawPosition.x, currentDrawPosition.y)
-                            }
-                        }
                         if (currentDrawPosition.isSpecified && drawDownPosition.isSpecified) {
-                            if (!isEraserOn) {
-                                when (drawPathMode) {
-                                    DrawPathMode.DoubleLinePointingArrow,
-                                    DrawPathMode.Line,
-                                    DrawPathMode.LinePointingArrow -> {
-                                        drawPath = Path().apply {
-                                            moveTo(drawDownPosition.x, drawDownPosition.y)
-                                            lineTo(currentDrawPosition.x, currentDrawPosition.y)
-                                        }
-                                        drawPathMode.drawArrowsIfNeeded(
-                                            drawPath = drawPath,
-                                            strokeWidth = strokeWidth,
-                                            canvasSize = canvasSize
-                                        )
-                                    }
-
-                                    DrawPathMode.PointingArrow,
-                                    DrawPathMode.DoublePointingArrow -> {
-                                        drawPath = pathWithoutTransformations
-                                        PathMeasure().apply {
-                                            setPath(drawPath, false)
-                                        }.let {
-                                            it.getPosition(it.length)
-                                        }.let { lastPoint ->
-                                            if (!lastPoint.isSpecified) {
-                                                drawPath.moveTo(
-                                                    currentDrawPosition.x,
-                                                    currentDrawPosition.y
-                                                )
-                                            }
-                                            drawPath.lineTo(
+                            drawHelper.drawPath(
+                                onDrawFreeArrow = {
+                                    drawPath = pathWithoutTransformations
+                                    PathMeasure().apply {
+                                        setPath(drawPath, false)
+                                    }.let {
+                                        it.getPosition(it.length)
+                                    }.let { lastPoint ->
+                                        if (!lastPoint.isSpecified) {
+                                            drawPath.moveTo(
                                                 currentDrawPosition.x,
                                                 currentDrawPosition.y
                                             )
                                         }
-
-                                        drawPathMode.drawArrowsIfNeeded(
-                                            drawPath = drawPath,
-                                            strokeWidth = strokeWidth,
-                                            canvasSize = canvasSize
+                                        drawPath.lineTo(
+                                            currentDrawPosition.x,
+                                            currentDrawPosition.y
                                         )
                                     }
 
-                                    DrawPathMode.Rect,
-                                    DrawPathMode.OutlinedRect -> {
-                                        val top = max(drawDownPosition.y, currentDrawPosition.y)
-                                        val left = min(drawDownPosition.x, currentDrawPosition.x)
-                                        val bottom = min(drawDownPosition.y, currentDrawPosition.y)
-                                        val right = max(drawDownPosition.x, currentDrawPosition.x)
-
-                                        val newPath = Path().apply {
-                                            moveTo(left, top)
-                                            lineTo(right, top)
-                                            lineTo(right, bottom)
-                                            lineTo(left, bottom)
-                                            lineTo(left, top)
-                                        }
-                                        drawPath = newPath
+                                    drawArrowsIfNeeded(drawPath)
+                                },
+                                onBaseDraw = {
+                                    PathMeasure().apply {
+                                        setPath(drawPath, false)
+                                    }.let {
+                                        it.getPosition(it.length)
+                                    }.takeOrElse { currentDrawPosition }.let { lastPoint ->
+                                        drawPath.moveTo(lastPoint.x, lastPoint.y)
+                                        drawPath.lineTo(
+                                            currentDrawPosition.x,
+                                            currentDrawPosition.y
+                                        )
                                     }
-
-                                    DrawPathMode.Oval,
-                                    DrawPathMode.OutlinedOval -> {
-                                        val newPath = Path().apply {
-                                            addOval(
-                                                Rect(
-                                                    top = max(
-                                                        drawDownPosition.y,
-                                                        currentDrawPosition.y
-                                                    ),
-                                                    left = min(
-                                                        drawDownPosition.x,
-                                                        currentDrawPosition.x
-                                                    ),
-                                                    bottom = min(
-                                                        drawDownPosition.y,
-                                                        currentDrawPosition.y
-                                                    ),
-                                                    right = max(
-                                                        drawDownPosition.x,
-                                                        currentDrawPosition.x
-                                                    ),
-                                                )
-                                            )
-                                        }
-                                        drawPath = newPath
-                                    }
-
-                                    else -> baseMove()
                                 }
-                            } else baseMove()
+                            )
 
                             onAddPath(
                                 UiPathPaint(
@@ -641,12 +453,7 @@ fun BitmapDrawer(
                     drawColor(Color.Transparent.toArgb(), PorterDuff.Mode.CLEAR)
                     drawColor(backgroundColor.toArgb())
 
-                    paths.forEach { (nonScaledPath, nonScaledStroke, radius, drawColor, isErasing, effect, size, pathMode) ->
-                        val stroke by remember(nonScaledPath, canvasSize) {
-                            derivedStateOf {
-                                nonScaledStroke.toPx(canvasSize)
-                            }
-                        }
+                    paths.forEach { (nonScaledPath, strokeWidth, brushSoftness, drawColor, isEraserOn, drawMode, size, drawPathMode) ->
                         val path by remember(nonScaledPath, canvasSize, size) {
                             derivedStateOf {
                                 nonScaledPath.scaleToFitCanvas(
@@ -655,29 +462,8 @@ fun BitmapDrawer(
                                 ).asAndroidPath()
                             }
                         }
-                        val isRect by remember(pathMode) {
-                            derivedStateOf {
-                                listOf(
-                                    DrawPathMode.OutlinedRect,
-                                    DrawPathMode.OutlinedOval,
-                                    DrawPathMode.Rect,
-                                    DrawPathMode.Oval,
-                                    DrawPathMode.Lasso
-                                ).any { pathMode::class.isInstance(it) }
-                            }
-                        }
 
-                        val isFilled by remember {
-                            derivedStateOf {
-                                listOf(
-                                    DrawPathMode.Rect,
-                                    DrawPathMode.Oval,
-                                    DrawPathMode.Lasso
-                                ).any { pathMode::class.isInstance(it) }
-                            }
-                        }
-
-                        if (effect is DrawMode.PathEffect && !isErasing) {
+                        if (drawMode is DrawMode.PathEffect && !isEraserOn) {
                             var shaderSource by remember(backgroundColor) {
                                 mutableStateOf<ImageBitmap?>(null)
                             }
@@ -686,26 +472,14 @@ fun BitmapDrawer(
                                     shaderSource = onRequestFiltering(
                                         drawImageBitmap.overlay(drawBitmap)
                                             .asAndroidBitmap(),
-                                        transformationsForMode(effect)
+                                        transformationsForMode(drawMode)
                                     )?.asImageBitmap()?.clipBitmap(
                                         path = path.asComposePath(),
-                                        paint = Paint().apply {
-                                            if (isFilled) {
-                                                style = PaintingStyle.Fill
-                                            } else {
-                                                style = PaintingStyle.Stroke
-                                                this.strokeWidth = stroke
-                                                if (isRect) {
-                                                    strokeCap = StrokeCap.Square
-                                                } else {
-                                                    strokeCap = StrokeCap.Round
-                                                    strokeJoin = StrokeJoin.Round
-                                                }
-                                            }
-
-                                            color = Color.Transparent
-                                            blendMode = BlendMode.Clear
-                                        }
+                                        paint = pathEffectPaint(
+                                            strokeWidth = strokeWidth,
+                                            drawPathMode = drawPathMode,
+                                            canvasSize = canvasSize
+                                        ).asComposePaint()
                                     )?.also {
                                         it.prepareToDraw()
                                         invalidations++
@@ -724,62 +498,37 @@ fun BitmapDrawer(
                                 )
                             }
                         } else {
-                            val pathPaint by remember(
-                                isErasing,
-                                isFilled,
-                                stroke,
-                                isRect,
-                                effect,
-                                drawColor,
-                                radius,
-                                canvasSize
-                            ) {
-                                derivedStateOf {
-                                    Paint().apply {
-                                        blendMode = if (!isErasing) blendMode else BlendMode.Clear
-                                        if (isErasing) {
-                                            style = PaintingStyle.Stroke
-                                            this.strokeWidth = stroke
-                                            strokeCap = StrokeCap.Round
-                                            strokeJoin = StrokeJoin.Round
-                                        } else {
-                                            if (isFilled) {
-                                                style = PaintingStyle.Fill
-                                            } else {
-                                                style = PaintingStyle.Stroke
-                                                this.strokeWidth = stroke
-                                                if (effect is DrawMode.Highlighter || isRect) {
-                                                    strokeCap = StrokeCap.Square
-                                                } else {
-                                                    strokeCap = StrokeCap.Round
-                                                    strokeJoin = StrokeJoin.Round
-                                                }
-                                            }
-                                        }
-                                        color = drawColor
-                                        alpha = drawColor.alpha
-                                    }.asFrameworkPaint().apply {
-                                        if (effect is DrawMode.Neon && !isErasing) {
-                                            this.color = Color.White.toArgb()
-                                            setShadowLayer(
-                                                radius.toPx(canvasSize),
-                                                0f,
-                                                0f,
-                                                drawColor
-                                                    .copy(alpha = .8f)
-                                                    .toArgb()
-                                            )
-                                        } else if (radius.value > 0f) {
-                                            maskFilter =
-                                                BlurMaskFilter(
-                                                    radius.toPx(canvasSize),
-                                                    BlurMaskFilter.Blur.NORMAL
-                                                )
-                                        }
-                                    }
+                            val pathPaint by rememberPaint(
+                                strokeWidth = strokeWidth,
+                                isEraserOn = isEraserOn,
+                                drawColor = drawColor,
+                                brushSoftness = brushSoftness,
+                                drawMode = drawMode,
+                                canvasSize = canvasSize,
+                                drawPathMode = drawPathMode
+                            )
+                            if (drawMode is DrawMode.Text && !isEraserOn) {
+                                if (drawMode.isRepeated) {
+                                    drawRepeatedTextOnPath(
+                                        text = drawMode.text,
+                                        path = path,
+                                        paint = pathPaint,
+                                        interval = drawMode.repeatingInterval.toPx(canvasSize)
+                                    )
+                                } else {
+                                    drawTextOnPath(drawMode.text, path, 0f, 0f, pathPaint)
                                 }
+                            } else if (drawMode is DrawMode.Image && !isEraserOn) {
+                                drawRepeatedImageOnPath(
+                                    drawMode = drawMode,
+                                    strokeWidth = strokeWidth,
+                                    canvasSize = canvasSize,
+                                    path = path,
+                                    paint = pathPaint
+                                )
+                            } else {
+                                drawPath(path, pathPaint)
                             }
-                            drawPath(path, pathPaint)
                         }
                     }
 
@@ -789,82 +538,69 @@ fun BitmapDrawer(
                                 drawPath.asAndroidPath()
                             }
                         }
-                        drawPath(androidPath, drawPaint)
+                        if (drawMode is DrawMode.Text && !isEraserOn) {
+                            if (drawMode.isRepeated) {
+                                drawRepeatedTextOnPath(
+                                    text = drawMode.text,
+                                    path = androidPath,
+                                    paint = drawPaint,
+                                    interval = drawMode.repeatingInterval.toPx(canvasSize)
+                                )
+                            } else {
+                                drawTextOnPath(drawMode.text, androidPath, 0f, 0f, drawPaint)
+                            }
+                        } else if (drawMode is DrawMode.Image && !isEraserOn) {
+                            drawRepeatedImageOnPath(
+                                drawMode = drawMode,
+                                strokeWidth = strokeWidth,
+                                canvasSize = canvasSize,
+                                path = androidPath,
+                                paint = drawPaint
+                            )
+                        } else {
+                            drawPath(androidPath, drawPaint)
+                        }
                     }
                 }
             }
 
-            var shaderBitmap by remember {
-                mutableStateOf<ImageBitmap?>(null)
-            }
+            if (drawMode is DrawMode.PathEffect && !isEraserOn) {
+                var shaderBitmap by remember {
+                    mutableStateOf<ImageBitmap?>(null)
+                }
 
-            LaunchedEffect(outputImage, paths, backgroundColor, drawMode) {
-                shaderBitmap = onRequestFiltering(
-                    outputImage.asAndroidBitmap(),
-                    transformationsForMode(drawMode)
-                )?.createScaledBitmap(
-                    width = imageWidth,
-                    height = imageHeight
-                )?.asImageBitmap()
-            }
+                LaunchedEffect(outputImage, paths, backgroundColor, drawMode) {
+                    shaderBitmap = onRequestFiltering(
+                        outputImage.asAndroidBitmap(),
+                        transformationsForMode(drawMode)
+                    )?.createScaledBitmap(
+                        width = imageWidth,
+                        height = imageHeight
+                    )?.asImageBitmap()
+                }
 
-            if (drawMode is DrawMode.PathEffect && shaderBitmap != null && !isEraserOn) {
-                drawPathCanvas.apply {
-                    with(nativeCanvas) {
-                        drawColor(Color.Transparent.toArgb(), PorterDuff.Mode.CLEAR)
+                shaderBitmap?.let {
+                    drawPathCanvas.apply {
+                        with(nativeCanvas) {
+                            drawColor(Color.Transparent.toArgb(), PorterDuff.Mode.CLEAR)
 
-                        val isRect by remember(drawPathMode) {
-                            derivedStateOf {
-                                listOf(
-                                    DrawPathMode.OutlinedRect,
-                                    DrawPathMode.OutlinedOval,
-                                    DrawPathMode.Rect,
-                                    DrawPathMode.Oval,
-                                    DrawPathMode.Lasso
-                                ).any { drawPathMode::class.isInstance(it) }
+                            val paint by rememberPathEffectPaint(
+                                strokeWidth = strokeWidth,
+                                drawPathMode = drawPathMode,
+                                canvasSize = canvasSize
+                            )
+                            val newPath = drawPath.copy().asAndroidPath().apply {
+                                fillType = NativePath.FillType.INVERSE_WINDING
                             }
-                        }
+                            val imagePaint = remember { Paint() }
 
-                        val isFilled by remember(drawPathMode) {
-                            derivedStateOf {
-                                listOf(
-                                    DrawPathMode.Rect,
-                                    DrawPathMode.Oval,
-                                    DrawPathMode.Lasso
-                                ).any { drawPathMode::class.isInstance(it) }
-                            }
+                            drawImage(
+                                image = it,
+                                topLeftOffset = Offset.Zero,
+                                paint = imagePaint
+                            )
+                            drawPath(newPath, paint)
                         }
-
-                        val paint by remember(isFilled, strokeWidth, canvasSize, isRect) {
-                            derivedStateOf {
-                                Paint().apply {
-                                    if (isFilled) {
-                                        style = PaintingStyle.Fill
-                                    } else {
-                                        style = PaintingStyle.Stroke
-                                        this.strokeWidth = strokeWidth.toPx(canvasSize)
-                                        if (isRect) {
-                                            strokeCap = StrokeCap.Square
-                                        } else {
-                                            strokeCap = StrokeCap.Round
-                                            strokeJoin = StrokeJoin.Round
-                                        }
-                                    }
-
-                                    color = Color.Transparent
-                                    blendMode = BlendMode.Clear
-                                }.asFrameworkPaint()
-                            }
-                        }
-                        val newPath = drawPath.copy().asAndroidPath().apply {
-                            fillType = android.graphics.Path.FillType.INVERSE_WINDING
-                        }
-                        val imagePaint = remember { Paint() }
-
-                        drawImage(
-                            shaderBitmap!!, Offset.Zero, imagePaint
-                        )
-                        drawPath(newPath, paint)
                     }
                 }
             }
@@ -928,142 +664,5 @@ fun BitmapDrawer(
                 contentScale = ContentScale.FillBounds
             )
         }
-    }
-}
-
-private fun Path.copy(): Path = android.graphics.Path(this.asAndroidPath()).asComposePath()
-
-private fun DrawPathMode.drawArrowsIfNeeded(
-    drawPath: Path,
-    strokeWidth: Pt,
-    canvasSize: IntegerSize
-) {
-    when (this) {
-        DrawPathMode.DoublePointingArrow,
-        DrawPathMode.DoubleLinePointingArrow -> {
-
-            drawEndArrow(
-                drawPath = drawPath,
-                strokeWidth = strokeWidth,
-                canvasSize = canvasSize
-            )
-
-            drawStartArrow(
-                drawPath = drawPath,
-                strokeWidth = strokeWidth,
-                canvasSize = canvasSize
-            )
-        }
-
-        DrawPathMode.PointingArrow,
-        DrawPathMode.LinePointingArrow -> {
-            drawEndArrow(
-                drawPath = drawPath,
-                strokeWidth = strokeWidth,
-                canvasSize = canvasSize
-            )
-        }
-
-        else -> Unit
-    }
-}
-
-private fun ImageBitmap.clipBitmap(
-    path: Path,
-    paint: Paint,
-): ImageBitmap {
-    val bitmap = this.asAndroidBitmap()
-    val newPath = android.graphics.Path(path.asAndroidPath())
-    AndroidCanvas(bitmap).apply {
-        drawPath(
-            newPath.apply {
-                fillType = android.graphics.Path.FillType.INVERSE_WINDING
-            },
-            paint.asFrameworkPaint()
-        )
-    }
-    return bitmap.asImageBitmap()
-}
-
-private fun ImageBitmap.overlay(overlay: ImageBitmap): ImageBitmap {
-    val image = this.asAndroidBitmap()
-    val finalBitmap = Bitmap.createBitmap(image.width, image.height, image.config)
-    val canvas = AndroidCanvas(finalBitmap)
-    canvas.drawBitmap(image, Matrix(), null)
-    canvas.drawBitmap(overlay.asAndroidBitmap(), 0f, 0f, null)
-    return finalBitmap.asImageBitmap()
-}
-
-private fun drawEndArrow(
-    drawPath: Path,
-    strokeWidth: Pt,
-    canvasSize: IntegerSize
-) {
-    val (preLastPoint, lastPoint) = PathMeasure().apply {
-        setPath(drawPath, false)
-    }.let {
-        Pair(
-            it.getPosition(it.length - strokeWidth.toPx(canvasSize) * 3f)
-                .takeOrElse { Offset.Zero },
-            it.getPosition(it.length).takeOrElse { Offset.Zero }
-        )
-    }
-
-    val arrowVector = lastPoint - preLastPoint
-    fun drawArrow() {
-
-        val (rx1, ry1) = arrowVector.rotateVector(150.0)
-        val (rx2, ry2) = arrowVector.rotateVector(210.0)
-
-
-        drawPath.apply {
-            relativeLineTo(rx1, ry1)
-            moveTo(lastPoint.x, lastPoint.y)
-            relativeLineTo(rx2, ry2)
-        }
-    }
-
-    if (abs(arrowVector.x) < 3f * strokeWidth.toPx(canvasSize) && abs(
-            arrowVector.y
-        ) < 3f * strokeWidth.toPx(canvasSize) && preLastPoint != Offset.Zero
-    ) {
-        drawArrow()
-    }
-}
-
-private fun drawStartArrow(
-    drawPath: Path,
-    strokeWidth: Pt,
-    canvasSize: IntegerSize
-) {
-    val (firstPoint, secondPoint) = PathMeasure().apply {
-        setPath(drawPath, false)
-    }.let {
-        Pair(
-            it.getPosition(0f).takeOrElse { Offset.Zero },
-            it.getPosition(strokeWidth.toPx(canvasSize) * 3f).takeOrElse { Offset.Zero }
-        )
-    }
-
-    val arrowVector = firstPoint - secondPoint
-    fun drawArrow() {
-
-        val (rx1, ry1) = arrowVector.rotateVector(150.0)
-        val (rx2, ry2) = arrowVector.rotateVector(210.0)
-
-
-        drawPath.apply {
-            moveTo(firstPoint.x, firstPoint.y)
-            relativeLineTo(rx1, ry1)
-            moveTo(firstPoint.x, firstPoint.y)
-            relativeLineTo(rx2, ry2)
-        }
-    }
-
-    if (abs(arrowVector.x) < 3f * strokeWidth.toPx(canvasSize) && abs(
-            arrowVector.y
-        ) < 3f * strokeWidth.toPx(canvasSize) && secondPoint != Offset.Zero
-    ) {
-        drawArrow()
     }
 }

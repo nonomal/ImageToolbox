@@ -377,4 +377,19 @@ sealed class Setting(
         title = R.string.default_line_width,
         subtitle = null
     )
+
+    data object OpenEditInsteadOfPreview : Setting(
+        title = R.string.open_edit_instead_of_preview,
+        subtitle = R.string.open_edit_instead_of_preview_sub
+    )
+
+    data object CanEnterPresetsByTextField : Setting(
+        title = R.string.allow_enter_by_text_field,
+        subtitle = R.string.allow_enter_by_text_field_sub
+    )
+
+    data object ColorBlindScheme : Setting(
+        title = R.string.color_blind_scheme,
+        subtitle = R.string.color_blind_scheme_sub
+    )
 }

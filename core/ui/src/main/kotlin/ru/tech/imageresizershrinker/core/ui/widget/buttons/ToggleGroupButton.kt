@@ -44,6 +44,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.compositeOver
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -180,10 +181,12 @@ fun ToggleGroupButton(
                             MaterialTheme.colorScheme.surfaceContainer
                         }
                         val selected = index == selectedIndex
+                        val focus = LocalFocusManager.current
 
                         SegmentedButton(
                             enabled = enabled,
                             onClick = {
+                                focus.clearFocus()
                                 haptics.performHapticFeedback(
                                     HapticFeedbackType.LongPress
                                 )
@@ -217,17 +220,18 @@ fun ToggleGroupButton(
                                     )
                                 ).value,
                             ),
-                            modifier = Modifier.rsBlurShadow(
-                                shape = SegmentedButtonDefaults.itemShape(
-                                    itemCount - 1 - index,
-                                    itemCount
-                                ),
-                                radius = animateDpAsState(
-                                    if (settingsState.borderWidth >= 0.dp || !settingsState.drawButtonShadows) 0.dp
-                                    else if (selected) 2.dp
-                                    else 1.dp
-                                ).value
-                            ),
+                            modifier = if (!(settingsState.borderWidth >= 0.dp || !settingsState.drawButtonShadows)) {
+                                Modifier.rsBlurShadow(
+                                    shape = SegmentedButtonDefaults.itemShape(
+                                        itemCount - 1 - index,
+                                        itemCount
+                                    ),
+                                    radius = animateDpAsState(
+                                        if (selected) 2.dp
+                                        else 1.dp
+                                    ).value
+                                )
+                            } else Modifier,
                             shape = shape
                         ) {
                             itemContent(index)

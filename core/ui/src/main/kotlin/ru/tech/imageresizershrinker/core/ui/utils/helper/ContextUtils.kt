@@ -21,6 +21,7 @@ package ru.tech.imageresizershrinker.core.ui.utils.helper
 
 import android.Manifest
 import android.app.Activity
+import android.app.ActivityManager
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
@@ -31,11 +32,14 @@ import android.net.Uri
 import android.os.Build
 import android.widget.Toast
 import androidx.annotation.StringRes
+import androidx.appcompat.app.AppCompatDelegate
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.ErrorOutline
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.core.app.ActivityCompat
+import androidx.core.os.LocaleListCompat
 import androidx.documentfile.provider.DocumentFile
+import ru.tech.imageresizershrinker.core.domain.model.PerformanceClass
 import ru.tech.imageresizershrinker.core.resources.R
 import ru.tech.imageresizershrinker.core.ui.utils.helper.IntentUtils.parcelable
 import ru.tech.imageresizershrinker.core.ui.utils.helper.IntentUtils.parcelableArrayList
@@ -47,8 +51,9 @@ import ru.tech.imageresizershrinker.core.ui.utils.permission.PermissionUtils.has
 import ru.tech.imageresizershrinker.core.ui.utils.permission.PermissionUtils.setPermissionsAllowed
 import java.io.BufferedReader
 import java.io.InputStreamReader
-import java.io.OutputStream
+import java.io.RandomAccessFile
 import java.util.Locale
+import kotlin.math.ceil
 
 
 object ContextUtils {
@@ -126,15 +131,16 @@ object ContextUtils {
         intent: Intent?,
         onStart: () -> Unit,
         onColdStart: () -> Unit,
-        showToast: (message: String, icon: ImageVector) -> Unit,
-        navigate: (Screen) -> Unit,
+        onShowToast: (message: String, icon: ImageVector) -> Unit,
+        onNavigate: (Screen) -> Unit,
         onGetUris: (List<Uri>) -> Unit,
         onHasExtraImageType: (String) -> Unit,
-        notHasUris: Boolean,
-        onWantGithubReview: () -> Unit
+        isHasUris: Boolean,
+        onWantGithubReview: () -> Unit,
+        isOpenEditInsteadOfPreview: Boolean
     ) {
         onStart()
-        if (intent?.type != null && notHasUris) onColdStart()
+        if (intent?.type != null && !isHasUris) onColdStart()
 
         if (intent?.action == Intent.ACTION_BUG_REPORT) {
             onWantGithubReview()
@@ -152,17 +158,20 @@ object ContextUtils {
                     Intent.ACTION_VIEW -> {
                         val data = intent.data
                         val clipData = intent.clipData
-                        if (clipData != null) {
-                            navigate(Screen.ImagePreview(intent.clipData!!.clipList()))
-                        } else if (data != null) {
-                            navigate(Screen.ImagePreview(listOf(data)))
-                        } else null
+                        val uris =
+                            clipData?.clipList() ?: data?.let { listOf(it) } ?: return@runCatching
+
+                        if (isOpenEditInsteadOfPreview) {
+                            onGetUris(uris)
+                        } else {
+                            onNavigate(Screen.ImagePreview(uris))
+                        }
                     }
 
                     Intent.ACTION_SEND -> {
                         intent.parcelable<Uri>(Intent.EXTRA_STREAM)?.let {
                             if (intent.getStringExtra("screen") == Screen.PickColorFromImage::class.simpleName) {
-                                navigate(Screen.PickColorFromImage(it))
+                                onNavigate(Screen.PickColorFromImage(it))
                             } else {
                                 if (intent.type?.contains("gif") == true) {
                                     onHasExtraImageType("gif")
@@ -202,19 +211,20 @@ object ContextUtils {
                     val uri = intent.data ?: intent.parcelable<Uri>(Intent.EXTRA_STREAM)
                     uri?.let {
                         if (intent.action == Intent.ACTION_VIEW) {
-                            navigate(Screen.PdfTools(Screen.PdfTools.Type.Preview(it)))
+                            onNavigate(Screen.PdfTools(Screen.PdfTools.Type.Preview(it)))
                         } else {
                             onHasExtraImageType("pdf")
                             onGetUris(listOf(uri))
                         }
                     }
                 } else if (text != null) {
-                    navigate(Screen.LoadNetImage(text))
+                    onHasExtraImageType(text)
+                    onGetUris(listOf())
                 } else {
                     when (intent.action) {
                         Intent.ACTION_SEND_MULTIPLE -> {
                             intent.parcelableArrayList<Uri>(Intent.EXTRA_STREAM)?.let {
-                                navigate(Screen.Zip(it))
+                                onNavigate(Screen.Zip(it))
                             }
                         }
 
@@ -226,17 +236,55 @@ object ContextUtils {
                         }
 
                         else -> null
-                    } ?: showToast(
+                    } ?: onShowToast(
                         getString(R.string.unsupported_type, intent.type),
                         Icons.Rounded.ErrorOutline
                     )
                 }
             } else Unit
-        }.getOrNull() ?: showToast(
+        }.getOrNull() ?: onShowToast(
             getString(R.string.something_went_wrong),
             Icons.Rounded.ErrorOutline
         )
     }
+
+    val Context.performanceClass: PerformanceClass
+        get() {
+            val androidVersion = Build.VERSION.SDK_INT
+            val cpuCount = Runtime.getRuntime().availableProcessors()
+            val memoryClass =
+                (applicationContext.getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager).memoryClass
+            var totalCpuFreq = 0
+            var freqResolved = 0
+            for (i in 0 until cpuCount) {
+                runCatching {
+                    val reader = RandomAccessFile(
+                        String.format(
+                            Locale.ENGLISH,
+                            "/sys/devices/system/cpu/cpu%d/cpufreq/cpuinfo_max_freq",
+                            i
+                        ), "r"
+                    )
+                    val line = reader.readLine()
+                    if (line != null) {
+                        totalCpuFreq += line.toInt() / 1000
+                        freqResolved++
+                    }
+                    reader.close()
+                }
+            }
+            val maxCpuFreq =
+                if (freqResolved == 0) -1 else ceil((totalCpuFreq / freqResolved.toFloat()).toDouble())
+                    .toInt()
+
+            return if (androidVersion < 21 || cpuCount <= 2 || memoryClass <= 100 || cpuCount <= 4 && maxCpuFreq != -1 && maxCpuFreq <= 1250 || cpuCount <= 4 && maxCpuFreq <= 1600 && memoryClass <= 128 && androidVersion <= 21 || cpuCount <= 4 && maxCpuFreq <= 1300 && memoryClass <= 128 && androidVersion <= 24) {
+                PerformanceClass.Low
+            } else if (cpuCount < 8 || memoryClass <= 160 || maxCpuFreq != -1 && maxCpuFreq <= 2050 || maxCpuFreq == -1 && cpuCount == 8 && androidVersion <= 23) {
+                PerformanceClass.Average
+            } else {
+                PerformanceClass.High
+            }
+        }
 
     tailrec fun Context.findActivity(): Activity? = when (this) {
         is Activity -> this
@@ -252,17 +300,6 @@ object ContextUtils {
         val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
         val clip = ClipData.newPlainText(label, value)
         clipboard.setPrimaryClip(clip)
-    }
-
-    fun Context.shareText(value: String) {
-        val sendIntent = Intent().apply {
-            action = Intent.ACTION_SEND
-            type = "text/plain"
-            putExtra(Intent.EXTRA_TEXT, value)
-        }
-        val shareIntent = Intent.createChooser(sendIntent, getString(R.string.share))
-        shareIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-        startActivity(shareIntent)
     }
 
     fun Context.getStringLocalized(
@@ -296,8 +333,17 @@ object ContextUtils {
         return !getSystemProperty("ro.miui.ui.version.name").isNullOrBlank()
     }
 
+    fun isRedMagic(): Boolean {
+        val osName = runCatching {
+            System.getProperty("os.name")
+        }.getOrNull() ?: getSystemProperty("os.name")
+        return listOf("redmagic", "magic", "red").all {
+            osName?.contains(it, true) ?: false
+        }
+    }
+
     private fun getSystemProperty(name: String): String? {
-        return kotlin.runCatching {
+        return runCatching {
             val p = Runtime.getRuntime().exec("getprop $name")
             BufferedReader(InputStreamReader(p.inputStream), 1024).use {
                 return@runCatching it.readLine()
@@ -305,17 +351,41 @@ object ContextUtils {
         }.getOrNull()
     }
 
-    fun Context.openWriteableStream(
-        uri: Uri?,
-        onError: (Throwable) -> Unit
-    ): OutputStream? = uri?.let {
-        runCatching {
-            contentResolver.openOutputStream(uri, "rw")
-        }.getOrElse {
-            runCatching {
-                contentResolver.openOutputStream(uri, "w")
-            }.onFailure(onError).getOrNull()
+    fun Context.getLanguages(): Map<String, String> {
+        val languages = mutableListOf("" to getString(R.string.system)).apply {
+            addAll(
+                LocaleConfigCompat(this@getLanguages)
+                    .supportedLocales!!.toList()
+                    .map {
+                        it.toLanguageTag() to it.getDisplayName(it)
+                            .replaceFirstChar(Char::uppercase)
+                    }
+            )
         }
+
+        return languages.let { tags ->
+            listOf(tags.first()) + tags.drop(1).sortedBy { it.second }
+        }.toMap()
+    }
+
+    fun Context.getCurrentLocaleString(): String {
+        val locales = AppCompatDelegate.getApplicationLocales()
+        if (locales == LocaleListCompat.getEmptyLocaleList()) {
+            return getString(R.string.system)
+        }
+        return getDisplayName(locales.toLanguageTags())
+    }
+
+    private fun getDisplayName(lang: String?): String {
+        if (lang == null) {
+            return ""
+        }
+
+        val locale = when (lang) {
+            "" -> LocaleListCompat.getAdjustedDefault()[0]
+            else -> Locale.forLanguageTag(lang)
+        }
+        return locale!!.getDisplayName(locale).replaceFirstChar { it.uppercase(locale) }
     }
 
 }

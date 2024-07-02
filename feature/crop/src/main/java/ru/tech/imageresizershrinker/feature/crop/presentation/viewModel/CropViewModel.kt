@@ -32,8 +32,6 @@ import com.smarttoolfactory.cropper.settings.CropDefaults
 import com.smarttoolfactory.cropper.settings.CropOutlineProperty
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 import ru.tech.imageresizershrinker.core.domain.dispatchers.DispatchersHolder
 import ru.tech.imageresizershrinker.core.domain.image.ImageCompressor
 import ru.tech.imageresizershrinker.core.domain.image.ImageGetter
@@ -44,12 +42,12 @@ import ru.tech.imageresizershrinker.core.domain.image.model.ImageInfo
 import ru.tech.imageresizershrinker.core.domain.saving.FileController
 import ru.tech.imageresizershrinker.core.domain.saving.model.ImageSaveTarget
 import ru.tech.imageresizershrinker.core.domain.saving.model.SaveResult
+import ru.tech.imageresizershrinker.core.domain.utils.smartJob
 import ru.tech.imageresizershrinker.core.settings.domain.model.DomainAspectRatio
 import ru.tech.imageresizershrinker.core.ui.utils.BaseViewModel
 import ru.tech.imageresizershrinker.core.ui.utils.helper.ImageUtils.safeAspectRatio
 import ru.tech.imageresizershrinker.core.ui.utils.state.update
 import javax.inject.Inject
-import kotlin.random.Random
 
 @HiltViewModel
 class CropViewModel @Inject constructor(
@@ -109,17 +107,19 @@ class CropViewModel @Inject constructor(
         }
     }
 
-    fun updateMimeType(imageFormat: ImageFormat) {
+    fun setImageFormat(imageFormat: ImageFormat) {
         _imageFormat.value = imageFormat
     }
 
-    private var savingJob: Job? = null
+    private var savingJob: Job? by smartJob {
+        _isSaving.update { false }
+    }
 
     fun saveBitmap(
-        bitmap: Bitmap? = _bitmap.value,
+        oneTimeSaveLocationUri: String?,
         onComplete: (saveResult: SaveResult) -> Unit
-    ) = viewModelScope.launch {
-        withContext(defaultDispatcher) {
+    ) {
+        savingJob = viewModelScope.launch(defaultDispatcher) {
             _isSaving.value = true
             bitmap?.let { localBitmap ->
                 val byteArray = imageCompressor.compressAndTransform(
@@ -147,16 +147,13 @@ class CropViewModel @Inject constructor(
                             sequenceNumber = null,
                             data = byteArray
                         ),
-                        keepOriginalMetadata = false
+                        keepOriginalMetadata = false,
+                        oneTimeSaveLocationUri = oneTimeSaveLocationUri
                     )
                 )
             }
             _isSaving.value = false
         }
-    }.also {
-        _isSaving.value = false
-        savingJob?.cancel()
-        savingJob = it
     }
 
     fun setCropAspectRatio(
@@ -201,15 +198,13 @@ class CropViewModel @Inject constructor(
             originalSize = true,
             onGetImage = {
                 updateBitmap(it.image, true)
-                updateMimeType(it.imageInfo.imageFormat)
+                setImageFormat(it.imageInfo.imageFormat)
             },
             onError = onError
         )
     }
 
     fun shareBitmap(onComplete: () -> Unit) {
-        _isSaving.value = false
-        savingJob?.cancel()
         savingJob = viewModelScope.launch {
             _isSaving.value = true
             bitmap?.let { localBitmap ->
@@ -238,8 +233,6 @@ class CropViewModel @Inject constructor(
     }
 
     fun cacheCurrentImage(onComplete: (Uri) -> Unit) {
-        _isSaving.value = false
-        savingJob?.cancel()
         savingJob = viewModelScope.launch {
             _isSaving.value = true
             bitmap?.let { image ->
@@ -249,8 +242,7 @@ class CropViewModel @Inject constructor(
                         imageFormat = imageFormat,
                         width = image.width,
                         height = image.height
-                    ),
-                    name = Random.nextInt().toString()
+                    )
                 )?.let { uri ->
                     onComplete(uri.toUri())
                 }

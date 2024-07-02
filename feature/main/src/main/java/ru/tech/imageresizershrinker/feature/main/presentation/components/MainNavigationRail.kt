@@ -43,11 +43,14 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.DrawerDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.NavigationRailItem
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.RectangleShape
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
@@ -55,7 +58,6 @@ import ru.tech.imageresizershrinker.core.settings.presentation.provider.LocalSet
 import ru.tech.imageresizershrinker.core.ui.theme.outlineVariant
 import ru.tech.imageresizershrinker.core.ui.utils.navigation.Screen
 import ru.tech.imageresizershrinker.core.ui.widget.modifier.container
-import ru.tech.imageresizershrinker.core.ui.widget.other.NavigationItem
 
 @Composable
 internal fun MainNavigationRail(
@@ -102,12 +104,16 @@ internal fun MainNavigationRail(
                 Spacer(Modifier.height(8.dp))
                 Screen.typedEntries.forEachIndexed { index, (_, data) ->
                     val selected = index == selectedIndex
-                    NavigationItem(
+                    val haptics = LocalHapticFeedback.current
+                    NavigationRailItem(
                         modifier = Modifier
                             .height(height = 56.dp)
                             .width(100.dp),
                         selected = selected,
-                        onClick = { onValueChange(index) },
+                        onClick = {
+                            onValueChange(index)
+                            haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                        },
                         icon = {
                             AnimatedContent(
                                 targetState = selected,

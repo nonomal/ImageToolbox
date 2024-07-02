@@ -47,6 +47,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import ru.tech.imageresizershrinker.core.resources.R
+import ru.tech.imageresizershrinker.core.resources.icons.MiniEdit
 import ru.tech.imageresizershrinker.core.ui.widget.modifier.ContainerShapeDefaults
 import ru.tech.imageresizershrinker.core.ui.widget.modifier.alertDialogBorder
 import ru.tech.imageresizershrinker.core.ui.widget.preferences.PreferenceItem
@@ -55,7 +56,8 @@ import ru.tech.imageresizershrinker.core.ui.widget.preferences.PreferenceItem
 fun ShareButton(
     enabled: Boolean = true,
     onShare: () -> Unit,
-    onCopy: (ClipboardManager) -> Unit
+    onEdit: (() -> Unit)? = null,
+    onCopy: ((ClipboardManager) -> Unit)? = null
 ) {
     var showSelectionDialog by rememberSaveable {
         mutableStateOf(false)
@@ -66,7 +68,11 @@ fun ShareButton(
         contentColor = LocalContentColor.current,
         enableAutoShadowAndBorder = false,
         onClick = {
-            showSelectionDialog = true
+            if (onCopy != null || onEdit != null) {
+                showSelectionDialog = true
+            } else {
+                onShare()
+            }
         },
         enabled = enabled
     ) {
@@ -76,7 +82,7 @@ fun ShareButton(
         )
     }
 
-    if (showSelectionDialog) {
+    if (showSelectionDialog && (onEdit != null || onCopy != null)) {
         AlertDialog(
             modifier = Modifier.alertDialogBorder(),
             onDismissRequest = { showSelectionDialog = false },
@@ -119,22 +125,43 @@ fun ShareButton(
                             textAlign = TextAlign.Center
                         )
                     )
-                    Spacer(Modifier.height(4.dp))
-                    PreferenceItem(
-                        title = stringResource(R.string.copy),
-                        shape = ContainerShapeDefaults.bottomShape,
-                        startIcon = Icons.Rounded.ContentCopy,
-                        onClick = {
-                            showSelectionDialog = false
-                            onCopy(clipboardManager)
-                        },
-                        titleFontStyle = LocalTextStyle.current.copy(
-                            fontSize = 16.sp,
-                            fontWeight = FontWeight.Medium,
-                            lineHeight = 18.sp,
-                            textAlign = TextAlign.Center
+                    if (onCopy != null) {
+                        Spacer(Modifier.height(4.dp))
+                        PreferenceItem(
+                            title = stringResource(R.string.copy),
+                            shape = if (onEdit == null) ContainerShapeDefaults.bottomShape
+                            else ContainerShapeDefaults.centerShape,
+                            startIcon = Icons.Rounded.ContentCopy,
+                            onClick = {
+                                showSelectionDialog = false
+                                onCopy(clipboardManager)
+                            },
+                            titleFontStyle = LocalTextStyle.current.copy(
+                                fontSize = 16.sp,
+                                fontWeight = FontWeight.Medium,
+                                lineHeight = 18.sp,
+                                textAlign = TextAlign.Center
+                            )
                         )
-                    )
+                    }
+                    if (onEdit != null) {
+                        Spacer(Modifier.height(4.dp))
+                        PreferenceItem(
+                            title = stringResource(R.string.edit),
+                            shape = ContainerShapeDefaults.bottomShape,
+                            startIcon = Icons.Rounded.MiniEdit,
+                            onClick = {
+                                showSelectionDialog = false
+                                onEdit()
+                            },
+                            titleFontStyle = LocalTextStyle.current.copy(
+                                fontSize = 16.sp,
+                                fontWeight = FontWeight.Medium,
+                                lineHeight = 18.sp,
+                                textAlign = TextAlign.Center
+                            )
+                        )
+                    }
                 }
             }
         )

@@ -26,22 +26,26 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Image
 import androidx.compose.material.icons.rounded.BlurCircular
 import androidx.compose.material.icons.rounded.Brush
+import androidx.compose.material.icons.rounded.TextFormat
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.derivedStateOf
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -50,6 +54,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.smarttoolfactory.colordetector.util.ColorUtil.roundToTwoDigits
 import ru.tech.imageresizershrinker.core.resources.R
 import ru.tech.imageresizershrinker.core.resources.icons.Cube
 import ru.tech.imageresizershrinker.core.resources.icons.Highlighter
@@ -57,21 +62,31 @@ import ru.tech.imageresizershrinker.core.resources.icons.Laser
 import ru.tech.imageresizershrinker.core.ui.widget.buttons.EnhancedButton
 import ru.tech.imageresizershrinker.core.ui.widget.buttons.SupportingButton
 import ru.tech.imageresizershrinker.core.ui.widget.buttons.ToggleGroupButton
+import ru.tech.imageresizershrinker.core.ui.widget.controls.EnhancedSliderItem
 import ru.tech.imageresizershrinker.core.ui.widget.controls.resize_group.components.BlurRadiusSelector
+import ru.tech.imageresizershrinker.core.ui.widget.controls.selection.FontResSelector
+import ru.tech.imageresizershrinker.core.ui.widget.controls.selection.ImageSelector
 import ru.tech.imageresizershrinker.core.ui.widget.modifier.ContainerShapeDefaults
+import ru.tech.imageresizershrinker.core.ui.widget.modifier.animateShape
 import ru.tech.imageresizershrinker.core.ui.widget.modifier.container
+import ru.tech.imageresizershrinker.core.ui.widget.preferences.PreferenceRowSwitch
 import ru.tech.imageresizershrinker.core.ui.widget.sheets.SimpleSheet
 import ru.tech.imageresizershrinker.core.ui.widget.text.AutoSizeText
+import ru.tech.imageresizershrinker.core.ui.widget.text.RoundedTextField
 import ru.tech.imageresizershrinker.core.ui.widget.text.TitleItem
 import ru.tech.imageresizershrinker.feature.draw.domain.DrawMode
+import ru.tech.imageresizershrinker.feature.draw.domain.Pt
+import ru.tech.imageresizershrinker.feature.draw.domain.coerceIn
+import ru.tech.imageresizershrinker.feature.draw.domain.pt
 
 @Composable
 fun DrawModeSelector(
     modifier: Modifier,
     value: DrawMode,
+    strokeWidth: Pt,
     onValueChange: (DrawMode) -> Unit
 ) {
-    val state = rememberSaveable { mutableStateOf(false) }
+    var isSheetVisible by rememberSaveable { mutableStateOf(false) }
 
     Column(
         modifier = modifier
@@ -90,17 +105,13 @@ fun DrawModeSelector(
                 Spacer(modifier = Modifier.width(8.dp))
                 SupportingButton(
                     onClick = {
-                        state.value = true
+                        isSheetVisible = true
                     }
                 )
             },
-            selectedIndex = remember(value) {
-                derivedStateOf {
-                    DrawMode.entries.indexOfFirst {
-                        value::class.isInstance(it)
-                    }
-                }
-            }.value,
+            selectedIndex = DrawMode.entries.indexOfFirst {
+                value::class.isInstance(it)
+            },
             buttonIcon = {},
             itemContent = {
                 Icon(
@@ -123,7 +134,8 @@ fun DrawModeSelector(
                 valueRange = 5f..50f,
                 onValueChange = {
                     onValueChange(DrawMode.PathEffect.PrivacyBlur(it))
-                }
+                },
+                color = MaterialTheme.colorScheme.surface
             )
         }
         AnimatedVisibility(
@@ -136,8 +148,169 @@ fun DrawModeSelector(
                 value = (value as? DrawMode.PathEffect.Pixelation)?.pixelSize ?: 0f,
                 onValueChange = {
                     onValueChange(DrawMode.PathEffect.Pixelation(it))
-                }
+                },
+                color = MaterialTheme.colorScheme.surface
             )
+        }
+        AnimatedVisibility(
+            visible = value is DrawMode.Text,
+            enter = fadeIn() + expandVertically(),
+            exit = fadeOut() + shrinkVertically()
+        ) {
+            Column {
+                RoundedTextField(
+                    modifier = Modifier
+                        .padding(horizontal = 8.dp)
+                        .container(
+                            shape = ContainerShapeDefaults.topShape,
+                            color = MaterialTheme.colorScheme.surface
+                        )
+                        .padding(8.dp),
+                    value = (value as? DrawMode.Text)?.text ?: "",
+                    singleLine = false,
+                    onValueChange = {
+                        onValueChange(
+                            (value as? DrawMode.Text)?.copy(
+                                text = it
+                            ) ?: value
+                        )
+                    },
+                    label = {
+                        Text(stringResource(R.string.text))
+                    }
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                FontResSelector(
+                    fontRes = (value as? DrawMode.Text)?.font ?: 0,
+                    onValueChange = {
+                        onValueChange(
+                            (value as? DrawMode.Text)?.copy(
+                                font = it.fontRes ?: 0
+                            ) ?: value
+                        )
+                    },
+                    modifier = Modifier
+                        .padding(horizontal = 8.dp),
+                    shape = ContainerShapeDefaults.centerShape
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                val isDashSizeControlVisible = (value as? DrawMode.Text)?.isRepeated == true
+                PreferenceRowSwitch(
+                    title = stringResource(R.string.repeat_text),
+                    subtitle = stringResource(R.string.repeat_text_sub),
+                    checked = (value as? DrawMode.Text)?.isRepeated == true,
+                    onClick = {
+                        onValueChange(
+                            (value as? DrawMode.Text)?.copy(
+                                isRepeated = it
+                            ) ?: value
+                        )
+                    },
+                    color = MaterialTheme.colorScheme.surface,
+                    shape = animateShape(
+                        if (isDashSizeControlVisible) ContainerShapeDefaults.centerShape
+                        else ContainerShapeDefaults.bottomShape
+                    ),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 8.dp),
+                    resultModifier = Modifier.padding(16.dp),
+                    applyHorPadding = false
+                )
+                Spacer(
+                    modifier = Modifier.height(
+                        if (isDashSizeControlVisible) 4.dp else 8.dp
+                    )
+                )
+                AnimatedVisibility(
+                    visible = isDashSizeControlVisible,
+                    enter = fadeIn() + expandVertically(),
+                    exit = fadeOut() + shrinkVertically()
+                ) {
+                    EnhancedSliderItem(
+                        value = (value as? DrawMode.Text)?.repeatingInterval?.value ?: 0f,
+                        title = stringResource(R.string.dash_size),
+                        valueRange = 0f..100f,
+                        internalStateTransformation = {
+                            it.roundToTwoDigits()
+                        },
+                        onValueChange = {
+                            onValueChange(
+                                (value as? DrawMode.Text)?.copy(
+                                    repeatingInterval = it.pt
+                                ) ?: value
+                            )
+                        },
+                        color = MaterialTheme.colorScheme.surface,
+                        valueSuffix = " Pt",
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 8.dp)
+                            .padding(bottom = 8.dp),
+                        shape = ContainerShapeDefaults.bottomShape
+                    )
+                }
+            }
+        }
+
+        AnimatedVisibility(
+            visible = value is DrawMode.Image,
+            enter = fadeIn() + expandVertically(),
+            exit = fadeOut() + shrinkVertically()
+        ) {
+            Column {
+                ImageSelector(
+                    modifier = Modifier
+                        .padding(horizontal = 8.dp),
+                    value = (value as? DrawMode.Image)?.imageData ?: "",
+                    onValueChange = {
+                        onValueChange(
+                            (value as? DrawMode.Image)?.copy(
+                                imageData = it
+                            ) ?: value
+                        )
+                    },
+                    subtitle = stringResource(id = R.string.draw_image_sub),
+                    shape = ContainerShapeDefaults.topShape,
+                    color = MaterialTheme.colorScheme.surface
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                val dashMinimum = -((strokeWidth.value * 0.9f) / 2).toInt().toFloat()
+                LaunchedEffect(dashMinimum, value) {
+                    if (value is DrawMode.Image && value.repeatingInterval < dashMinimum.pt) {
+                        onValueChange(
+                            (value as? DrawMode.Image)?.copy(
+                                repeatingInterval = value.repeatingInterval.coerceIn(
+                                    dashMinimum.pt,
+                                    100.pt
+                                )
+                            ) ?: value
+                        )
+                    }
+                }
+                EnhancedSliderItem(
+                    value = (value as? DrawMode.Image)?.repeatingInterval?.value ?: 0f,
+                    title = stringResource(R.string.dash_size),
+                    valueRange = dashMinimum..100f,
+                    internalStateTransformation = {
+                        it.roundToTwoDigits()
+                    },
+                    onValueChange = {
+                        onValueChange(
+                            (value as? DrawMode.Image)?.copy(
+                                repeatingInterval = it.pt.coerceIn(dashMinimum.pt, 100.pt)
+                            ) ?: value
+                        )
+                    },
+                    color = MaterialTheme.colorScheme.surface,
+                    valueSuffix = " Pt",
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 8.dp),
+                    shape = ContainerShapeDefaults.bottomShape
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+            }
         }
     }
     SimpleSheet(
@@ -175,14 +348,17 @@ fun DrawModeSelector(
                 }
             }
         },
-        visible = state,
+        visible = isSheetVisible,
+        onDismiss = {
+            isSheetVisible = it
+        },
         title = {
             TitleItem(text = stringResource(R.string.draw_mode))
         },
         confirmButton = {
             EnhancedButton(
                 containerColor = MaterialTheme.colorScheme.secondaryContainer,
-                onClick = { state.value = false }
+                onClick = { isSheetVisible = false }
             ) {
                 AutoSizeText(stringResource(R.string.close))
             }
@@ -196,6 +372,8 @@ private fun DrawMode.getSubtitle(): Int = when (this) {
     is DrawMode.Pen -> R.string.pen_sub
     is DrawMode.PathEffect.PrivacyBlur -> R.string.privacy_blur_sub
     is DrawMode.PathEffect.Pixelation -> R.string.pixelation_sub
+    is DrawMode.Text -> R.string.draw_text_sub
+    is DrawMode.Image -> R.string.draw_mode_image_sub
 }
 
 private fun DrawMode.getTitle(): Int = when (this) {
@@ -204,6 +382,8 @@ private fun DrawMode.getTitle(): Int = when (this) {
     is DrawMode.Pen -> R.string.pen
     is DrawMode.PathEffect.PrivacyBlur -> R.string.privacy_blur
     is DrawMode.PathEffect.Pixelation -> R.string.pixelation
+    is DrawMode.Text -> R.string.text
+    is DrawMode.Image -> R.string.image
 }
 
 private fun DrawMode.getIcon(): ImageVector = when (this) {
@@ -212,4 +392,6 @@ private fun DrawMode.getIcon(): ImageVector = when (this) {
     is DrawMode.Pen -> Icons.Rounded.Brush
     is DrawMode.PathEffect.PrivacyBlur -> Icons.Rounded.BlurCircular
     is DrawMode.PathEffect.Pixelation -> Icons.Rounded.Cube
+    is DrawMode.Text -> Icons.Rounded.TextFormat
+    is DrawMode.Image -> Icons.Outlined.Image
 }

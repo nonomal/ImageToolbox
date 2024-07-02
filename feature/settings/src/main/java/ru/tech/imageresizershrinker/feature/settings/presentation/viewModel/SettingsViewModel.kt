@@ -24,22 +24,19 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
 import androidx.exifinterface.media.ExifInterface
-import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.t8rin.dynamic.theme.ColorTuple
 import com.t8rin.dynamic.theme.extractPrimaryColor
 import dagger.hilt.android.lifecycle.HiltViewModel
-import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.onEach
-import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
-import ru.tech.imageresizershrinker.core.di.IoDispatcher
 import ru.tech.imageresizershrinker.core.domain.dispatchers.DispatchersHolder
 import ru.tech.imageresizershrinker.core.domain.image.ImageGetter
 import ru.tech.imageresizershrinker.core.domain.image.model.ImageScaleMode
 import ru.tech.imageresizershrinker.core.domain.saving.FileController
+import ru.tech.imageresizershrinker.core.domain.saving.model.SaveResult
 import ru.tech.imageresizershrinker.core.settings.domain.SettingsManager
 import ru.tech.imageresizershrinker.core.settings.domain.model.ColorHarmonizer
 import ru.tech.imageresizershrinker.core.settings.domain.model.CopyToClipboardMode
@@ -49,7 +46,6 @@ import ru.tech.imageresizershrinker.core.settings.domain.model.SettingsState
 import ru.tech.imageresizershrinker.core.settings.domain.model.SwitchType
 import ru.tech.imageresizershrinker.core.ui.utils.BaseViewModel
 import ru.tech.imageresizershrinker.core.ui.utils.navigation.Screen
-import java.io.OutputStream
 import javax.inject.Inject
 
 @HiltViewModel
@@ -129,7 +125,7 @@ class SettingsViewModel @Inject constructor(
 
     fun toggleShowUpdateDialog() {
         viewModelScope.launch {
-            settingsManager.toggleShowDialog()
+            settingsManager.toggleShowUpdateDialogOnStartup()
         }
     }
 
@@ -226,14 +222,14 @@ class SettingsViewModel @Inject constructor(
     }
 
     fun createBackup(
-        outputStream: OutputStream?,
-        onSuccess: () -> Unit
+        uri: Uri,
+        onResult: (SaveResult) -> Unit
     ) {
         viewModelScope.launch(ioDispatcher) {
-            outputStream?.use {
-                it.write(settingsManager.createBackupFile())
-            }
-            onSuccess()
+            fileController.writeBytes(
+                uri = uri.toString(),
+                block = { it.writeBytes(settingsManager.createBackupFile()) }
+            ).also(onResult)
         }
     }
 
@@ -535,4 +531,21 @@ class SettingsViewModel @Inject constructor(
         }
     }
 
+    fun toggleOpenEditInsteadOfPreview() {
+        viewModelScope.launch {
+            settingsManager.toggleOpenEditInsteadOfPreview()
+        }
+    }
+
+    fun toggleCanEnterPresetsByTextField() {
+        viewModelScope.launch {
+            settingsManager.toggleCanEnterPresetsByTextField()
+        }
+    }
+
+    fun setColorBlindScheme(value: Int?) {
+        viewModelScope.launch {
+            settingsManager.setColorBlindType(value)
+        }
+    }
 }

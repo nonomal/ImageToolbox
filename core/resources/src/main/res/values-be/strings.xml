@@ -597,7 +597,7 @@
     <string name="skip">Прапусціць</string>
     <string name="copy">Копія</string>
     <string name="warning_bytes">Захаванне ў рэжыме %1$s можа быць нестабільным, таму што гэта фармат без страт</string>
-    <string name="presets_sub">Калі вы абралі папярэднюю ўстаноўку 125, выява будзе захавана ў памеры 125% ад арыгінальнай выявы са 100% якасцю. Калі вы выбіраеце значэнне 50, то выява будзе захавана з памерам 50% і якасцю 50%.</string>
+    <string name="presets_sub" formatted="false">Калі вы абралі папярэднюю ўстаноўку 125, выява будзе захавана ў памеры 125% ад арыгінальнай выявы са 100% якасцю. Калі вы выбіраеце значэнне 50, то выява будзе захавана з памерам 50% і якасцю 50%.</string>
     <string name="presets_sub_bytes">Прадусталяванне тут вызначае % выхаднога файла, г. зн., калі вы выбіраеце заданне 50 для выявы памерам 5 МБ, пасля захавання вы атрымаеце выяву памерам 2,5 МБ</string>
     <string name="tg_chat">Тэлеграм чат</string>
     <string name="crop_mask">Кроп-маска</string>
@@ -854,4 +854,13 @@
     <string name="sort_by_date_reversed">Сартаваць па даце (зваротна)</string>
     <string name="sort_by_name_reversed">Сартаваць па назве (зваротна)</string>
     <string name="sort_by_name">Сартаваць па назве</string>
+    <string name="show_settings_in_landscape_sub">Калі гэта адключана, то ў ландшафтным рэжыме налады будуць адчыняцца па кнопцы ў верхняй панэлі прыкладання, як заўсёды, замест сталай бачнай опцыі</string>
+    <string name="fullscreen_settings_sub">Ўключыце яго, і старонка настроек заўсёды будзе адкрывацца ў поўнаэкранным рэжыме, а не ў высоўнай скрыні</string>
+    <string name="try_again">Паспрабаваць зноў</string>
+    <string name="show_settings_in_landscape">Паказаць налады ў альбомнай арыентацыі</string>
+    <string name="pick">Выбраць</string>
+    <string name="fullscreen_settings">Поўнаэкранныя налады</string>
+    <string name="switch_type">Тып пераключальніка</string>
+    <string name="pick_multiple_media">Множны выбар медыя</string>
+    <string name="pick_single_media">Выбар медыя</string>
 </resources>

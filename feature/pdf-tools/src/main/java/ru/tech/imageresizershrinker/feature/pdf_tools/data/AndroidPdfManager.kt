@@ -61,7 +61,7 @@ internal class AndroidPdfManager @Inject constructor(
         imageUris: List<String>,
         onProgressChange: suspend (Int) -> Unit,
         scaleSmallImagesToLarge: Boolean,
-        preset: Preset.Numeric
+        preset: Preset.Percentage
     ): ByteArray = withContext(encodingDispatcher) {
         val pdfDocument = PdfDocument()
 
@@ -111,7 +111,7 @@ internal class AndroidPdfManager @Inject constructor(
     override fun convertPdfToImages(
         pdfUri: String,
         pages: List<Int>?,
-        preset: Preset.Numeric,
+        preset: Preset.Percentage,
         onGetPagesCount: suspend (Int) -> Unit,
         onProgressChange: suspend (Int, Bitmap) -> Unit,
         onComplete: suspend () -> Unit
@@ -120,39 +120,41 @@ internal class AndroidPdfManager @Inject constructor(
             pdfUri.toUri(),
             "r"
         )?.use { fileDescriptor ->
-            val pdfRenderer = PdfRenderer(fileDescriptor)
+            withContext(defaultDispatcher) {
+                val pdfRenderer = PdfRenderer(fileDescriptor)
 
-            onGetPagesCount(pages?.size ?: pdfRenderer.pageCount)
+                onGetPagesCount(pages?.size ?: pdfRenderer.pageCount)
 
-            for (pageIndex in 0 until pdfRenderer.pageCount) {
-                if (pages == null || pages.contains(pageIndex)) {
-                    val bitmap: Bitmap
-                    pdfRenderer.openPage(pageIndex).use { page ->
-                        bitmap = imageScaler.scaleUntilCanShow(
-                            Bitmap.createBitmap(
-                                (page.width * (preset.value / 100f)).roundToInt(),
-                                (page.height * (preset.value / 100f)).roundToInt(),
-                                Bitmap.Config.ARGB_8888
-                            )
-                        )!!
-                        page.render(bitmap, null, null, PdfRenderer.Page.RENDER_MODE_FOR_PRINT)
+                for (pageIndex in 0 until pdfRenderer.pageCount) {
+                    if (pages == null || pages.contains(pageIndex)) {
+                        val bitmap: Bitmap
+                        pdfRenderer.openPage(pageIndex).use { page ->
+                            bitmap = imageScaler.scaleUntilCanShow(
+                                Bitmap.createBitmap(
+                                    (page.width * (preset.value / 100f)).roundToInt(),
+                                    (page.height * (preset.value / 100f)).roundToInt(),
+                                    Bitmap.Config.ARGB_8888
+                                )
+                            )!!
+                            page.render(bitmap, null, null, PdfRenderer.Page.RENDER_MODE_FOR_PRINT)
+                        }
+
+                        val renderedBitmap = Bitmap.createBitmap(
+                            bitmap.width,
+                            bitmap.height,
+                            getSuitableConfig(bitmap)
+                        )
+                        Canvas(renderedBitmap).apply {
+                            drawColor(Color.White.toArgb())
+                            drawBitmap(bitmap, 0f, 0f, Paint().apply { isAntiAlias = true })
+                        }
+
+                        onProgressChange(pageIndex, renderedBitmap)
                     }
-
-                    val renderedBitmap = Bitmap.createBitmap(
-                        bitmap.width,
-                        bitmap.height,
-                        getSuitableConfig(bitmap)
-                    )
-                    Canvas(renderedBitmap).apply {
-                        drawColor(Color.White.toArgb())
-                        drawBitmap(bitmap, 0f, 0f, Paint().apply { isAntiAlias = true })
-                    }
-
-                    onProgressChange(pageIndex, renderedBitmap)
                 }
+                onComplete()
+                pdfRenderer.close()
             }
-            onComplete()
-            pdfRenderer.close()
         }
     }
 

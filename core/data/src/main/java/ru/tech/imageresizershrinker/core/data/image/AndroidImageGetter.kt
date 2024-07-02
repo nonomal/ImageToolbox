@@ -44,8 +44,8 @@ import java.util.Locale
 import javax.inject.Inject
 
 internal class AndroidImageGetter @Inject constructor(
-    private val imageLoader: ImageLoader,
     @ApplicationContext private val context: Context,
+    private val imageLoader: ImageLoader,
     dispatchersHolder: DispatchersHolder
 ) : DispatchersHolder by dispatchersHolder, ImageGetter<Bitmap, ExifInterface> {
 
@@ -53,17 +53,10 @@ internal class AndroidImageGetter @Inject constructor(
         uri: String,
         originalSize: Boolean
     ): ImageData<Bitmap, ExifInterface>? = withContext(defaultDispatcher) {
-        runCatching {
-            imageLoader.execute(
-                ImageRequest
-                    .Builder(context)
-                    .data(uri)
-                    .apply {
-                        if (originalSize) size(Size.ORIGINAL)
-                    }
-                    .build()
-            ).drawable?.toBitmap()
-        }.getOrNull()?.let { bitmap ->
+        getImage(
+            data = uri,
+            originalSize = originalSize
+        )?.let { bitmap ->
             val newUri = uri.toUri().tryGetLocation(context)
 
             val fd = context.contentResolver.openFileDescriptor(newUri, "r")
@@ -120,6 +113,25 @@ internal class AndroidImageGetter @Inject constructor(
         }.getOrNull()
     }
 
+    override suspend fun getImage(
+        data: Any,
+        size: Int?
+    ): Bitmap? = withContext(defaultDispatcher) {
+        runCatching {
+            imageLoader.execute(
+                ImageRequest
+                    .Builder(context)
+                    .data(data)
+                    .apply {
+                        size?.let {
+                            size(it)
+                        } ?: size(Size.ORIGINAL)
+                    }
+                    .build()
+            ).drawable?.toBitmap()
+        }.getOrNull()
+    }
+
     override suspend fun getImageWithTransformations(
         uri: String,
         transformations: List<Transformation<Bitmap>>,
@@ -153,6 +165,28 @@ internal class AndroidImageGetter @Inject constructor(
                     metadata = exif
                 )
             }
+        }.getOrNull()
+    }
+
+    override suspend fun getImageWithTransformations(
+        data: Any,
+        transformations: List<Transformation<Bitmap>>,
+        size: IntegerSize?
+    ): Bitmap? = withContext(defaultDispatcher) {
+        val request = ImageRequest
+            .Builder(context)
+            .data(data)
+            .transformations(
+                transformations.map { it.toCoil() }
+            )
+            .apply {
+                if (size == null) size(Size.ORIGINAL)
+                else size(size.width, size.height)
+            }
+            .build()
+
+        runCatching {
+            imageLoader.execute(request).drawable?.toBitmap()
         }.getOrNull()
     }
 

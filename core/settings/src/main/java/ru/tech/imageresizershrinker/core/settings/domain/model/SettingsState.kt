@@ -86,7 +86,12 @@ data class SettingsState(
     val showSettingsInLandscape: Boolean,
     val useFullscreenSettings: Boolean,
     val switchType: SwitchType,
-    val defaultDrawLineWidth: Float
+    val defaultDrawLineWidth: Float,
+    val oneTimeSaveLocations: List<OneTimeSaveLocation>,
+    val openEditInsteadOfPreview: Boolean,
+    val canEnterPresetsByTextField: Boolean,
+    val donateDialogOpenCount: Int,
+    val colorBlindType: Int?
 ) {
 
     companion object {
@@ -156,7 +161,12 @@ data class SettingsState(
                 showSettingsInLandscape = true,
                 useFullscreenSettings = false,
                 switchType = SwitchType.MaterialYou,
-                defaultDrawLineWidth = 20f
+                defaultDrawLineWidth = 20f,
+                oneTimeSaveLocations = emptyList(),
+                openEditInsteadOfPreview = false,
+                canEnterPresetsByTextField = false,
+                donateDialogOpenCount = 0,
+                colorBlindType = null
             )
         }
     }

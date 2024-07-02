@@ -23,13 +23,9 @@ import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
-import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
-import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.launch
-import ru.tech.imageresizershrinker.core.di.IoDispatcher
 import ru.tech.imageresizershrinker.core.domain.dispatchers.DispatchersHolder
 import ru.tech.imageresizershrinker.core.domain.image.ImageCompressor
 import ru.tech.imageresizershrinker.core.domain.image.ImageTransformer
@@ -41,12 +37,13 @@ import ru.tech.imageresizershrinker.core.domain.image.model.Quality
 import ru.tech.imageresizershrinker.core.domain.saving.FileController
 import ru.tech.imageresizershrinker.core.domain.saving.model.ImageSaveTarget
 import ru.tech.imageresizershrinker.core.domain.saving.model.SaveResult
+import ru.tech.imageresizershrinker.core.domain.saving.model.onSuccess
+import ru.tech.imageresizershrinker.core.domain.utils.smartJob
 import ru.tech.imageresizershrinker.core.ui.utils.BaseViewModel
 import ru.tech.imageresizershrinker.core.ui.utils.navigation.Screen
 import ru.tech.imageresizershrinker.core.ui.utils.state.update
 import ru.tech.imageresizershrinker.feature.pdf_tools.domain.PdfManager
 import ru.tech.imageresizershrinker.feature.pdf_tools.presentation.components.PdfToImageState
-import java.io.OutputStream
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -83,7 +80,8 @@ class PdfToolsViewModel @Inject constructor(
     private val _isSaving: MutableState<Boolean> = mutableStateOf(false)
     val isSaving by _isSaving
 
-    private val _presetSelected: MutableState<Preset.Numeric> = mutableStateOf(Preset.Numeric(100))
+    private val _presetSelected: MutableState<Preset.Percentage> =
+        mutableStateOf(Preset.Percentage(100))
     val presetSelected by _presetSelected
 
     private val _scaleSmallImagesToLarge: MutableState<Boolean> = mutableStateOf(false)
@@ -92,25 +90,26 @@ class PdfToolsViewModel @Inject constructor(
     private val _showOOMWarning: MutableState<Boolean> = mutableStateOf(false)
     val showOOMWarning by _showOOMWarning
 
-    private var savingJob: Job? = null
+    private var savingJob: Job? by smartJob {
+        _isSaving.update { false }
+    }
 
     private fun resetCalculatedData() {
         _byteArray.value = null
     }
 
     fun savePdfTo(
-        outputStream: OutputStream?,
-        onComplete: (Throwable?) -> Unit
+        uri: Uri,
+        onResult: (SaveResult) -> Unit
     ) {
-        _isSaving.value = false
-        savingJob?.cancel()
         savingJob = viewModelScope.launch(ioDispatcher) {
             _isSaving.value = true
-            kotlin.runCatching {
-                outputStream?.use {
-                    it.write(_byteArray.value)
-                }
-            }.exceptionOrNull().let(onComplete)
+            _byteArray.value?.let { byteArray ->
+                fileController.writeBytes(
+                    uri = uri.toString(),
+                    block = { it.writeBytes(byteArray) }
+                ).also(onResult).onSuccess(::registerSave)
+            }
             _isSaving.value = false
         }
     }
@@ -121,9 +120,8 @@ class PdfToolsViewModel @Inject constructor(
         _isSaving.value = false
     }
 
-    fun canGoBack(): Boolean {
-        return _byteArray.value == null && _imageInfo.value == ImageInfo()
-    }
+    override val haveChanges: Boolean
+        get() = super.haveChanges || _byteArray.value != null
 
     fun setType(type: Screen.PdfTools.Type) {
         when (type) {
@@ -131,6 +129,7 @@ class PdfToolsViewModel @Inject constructor(
             is Screen.PdfTools.Type.PdfToImages -> setPdfToImagesUri(type.pdfUri)
             is Screen.PdfTools.Type.Preview -> setPdfPreview(type.pdfUri)
         }
+        registerChanges()
         resetCalculatedData()
     }
 
@@ -185,10 +184,11 @@ class PdfToolsViewModel @Inject constructor(
         _pdfPreviewUri.update { null }
         _imagesToPdfState.update { null }
         _pdfToImageState.update { null }
-        _presetSelected.update { Preset.Numeric(100) }
+        _presetSelected.update { Preset.Original }
         _showOOMWarning.value = false
         _imageInfo.value = ImageInfo()
         resetCalculatedData()
+        registerChangesCleared()
     }
 
     private val _done: MutableState<Int> = mutableIntStateOf(0)
@@ -197,13 +197,13 @@ class PdfToolsViewModel @Inject constructor(
     private val _left: MutableState<Int> = mutableIntStateOf(1)
     val left by _left
 
-    fun savePdfToImage(
-        onComplete: (path: String) -> Unit
+    fun savePdfToImages(
+        oneTimeSaveLocationUri: String?,
+        onComplete: (List<SaveResult>) -> Unit
     ) {
-        savingJob?.cancel()
         _done.value = 0
         _left.value = 1
-        _isSaving.value = false
+        val results = mutableListOf<SaveResult>()
         savingJob = pdfManager.convertPdfToImages(
             pdfUri = _pdfToImageState.value?.uri.toString(),
             pages = _pdfToImageState.value?.pages,
@@ -216,22 +216,22 @@ class PdfToolsViewModel @Inject constructor(
                         currentInfo = it
                     )
                 }.apply {
-                    val result = fileController.save(
-                        ImageSaveTarget(
-                            imageInfo = this,
-                            metadata = null,
-                            originalUri = "pdf",
-                            sequenceNumber = _done.value + 1,
-                            data = imageCompressor.compressAndTransform(
-                                image = bitmap,
-                                imageInfo = this
-                            )
-                        ), false
+                    results.add(
+                        fileController.save(
+                            saveTarget = ImageSaveTarget(
+                                imageInfo = this,
+                                metadata = null,
+                                originalUri = _pdfToImageState.value?.uri.toString(),
+                                sequenceNumber = _done.value + 1,
+                                data = imageCompressor.compressAndTransform(
+                                    image = bitmap,
+                                    imageInfo = this
+                                )
+                            ),
+                            keepOriginalMetadata = false,
+                            oneTimeSaveLocationUri = oneTimeSaveLocationUri
+                        )
                     )
-                    if (result is SaveResult.Error.MissingPermissions) {
-                        savingJob?.cancel()
-                        return@convertPdfToImages onComplete("")
-                    }
                 }
                 _done.value += 1
             },
@@ -241,14 +241,12 @@ class PdfToolsViewModel @Inject constructor(
             },
             onComplete = {
                 _isSaving.value = false
-                onComplete(fileController.savingPath)
+                onComplete(results.onSuccess(::registerSave))
             }
         )
     }
 
     fun convertImagesToPdf(onComplete: () -> Unit) {
-        savingJob?.cancel()
-        _isSaving.value = false
         _done.value = 0
         _left.value = 0
         savingJob = viewModelScope.launch {
@@ -278,8 +276,6 @@ class PdfToolsViewModel @Inject constructor(
     fun preformSharing(
         onComplete: () -> Unit
     ) {
-        savingJob?.cancel()
-        _isSaving.value = false
         savingJob = viewModelScope.launch {
             _isSaving.value = true
             when (val type = _pdfType.value) {
@@ -313,7 +309,9 @@ class PdfToolsViewModel @Inject constructor(
                         pdfUri = _pdfToImageState.value?.uri.toString(),
                         pages = _pdfToImageState.value?.pages,
                         onProgressChange = { _, bitmap ->
-                            imageInfo.let {
+                            imageInfo.copy(
+                                originalUri = _pdfToImageState.value?.uri?.toString()
+                            ).let {
                                 imageTransformer.applyPresetBy(
                                     image = bitmap,
                                     preset = _presetSelected.value,
@@ -346,9 +344,8 @@ class PdfToolsViewModel @Inject constructor(
                     type.pdfUri?.toString()?.let {
                         shareProvider.shareUri(
                             uri = it,
-                            type = null
+                            onComplete = onComplete
                         )
-                        onComplete()
                     }
                 }
 
@@ -362,6 +359,7 @@ class PdfToolsViewModel @Inject constructor(
         _imagesToPdfState.update {
             it?.plus(uris)?.toSet()?.toList()
         }
+        registerChanges()
     }
 
     fun removeImageToPdfAt(index: Int) {
@@ -369,22 +367,24 @@ class PdfToolsViewModel @Inject constructor(
             _imagesToPdfState.update {
                 it?.toMutableList()?.apply { removeAt(index) }
             }
+            registerChanges()
         }
     }
 
     fun reorderImagesToPdf(uris: List<Uri>?) {
         _imagesToPdfState.update { uris }
+        registerChanges()
     }
 
     fun toggleScaleSmallImagesToLarge() {
         _scaleSmallImagesToLarge.update { !it }
+        registerChanges()
     }
 
-    private var presetSelectionJob: Job? = null
+    private var presetSelectionJob: Job? by smartJob()
 
     private fun checkForOOM() {
         val preset = _presetSelected.value
-        presetSelectionJob?.cancel()
         presetSelectionJob = viewModelScope.launch {
             runCatching {
                 _pdfToImageState.value?.let { (uri, pages) ->
@@ -398,9 +398,10 @@ class PdfToolsViewModel @Inject constructor(
                 }
             }.getOrNull() ?: _showOOMWarning.update { false }
         }
+        registerChanges()
     }
 
-    fun selectPreset(preset: Preset.Numeric) {
+    fun selectPreset(preset: Preset.Percentage) {
         _presetSelected.update { preset }
         preset.value()?.takeIf { it <= 100f }?.let { quality ->
             _imageInfo.update {
@@ -427,12 +428,14 @@ class PdfToolsViewModel @Inject constructor(
         _imageInfo.update {
             it.copy(imageFormat = imageFormat)
         }
+        registerChanges()
     }
 
     fun setQuality(quality: Quality) {
         _imageInfo.update {
             it.copy(quality = quality)
         }
+        registerChanges()
     }
 
 }

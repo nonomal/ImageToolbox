@@ -39,6 +39,7 @@ fun ImageToolboxTheme(
                 darkTheme = settingsState.isNightMode
             )
         ),
+        colorBlindType = settingsState.colorBlindType,
         defaultColorTuple = settingsState.appColorTuple,
         dynamicColor = dynamicColor,
         amoledMode = amoledMode,

@@ -48,9 +48,11 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -61,7 +63,6 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
-import dev.olshevski.navigation.reimagined.navigate
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import net.engawapg.lib.zoomable.rememberZoomState
@@ -71,7 +72,7 @@ import ru.tech.imageresizershrinker.core.resources.icons.ImageEdit
 import ru.tech.imageresizershrinker.core.ui.theme.White
 import ru.tech.imageresizershrinker.core.ui.utils.animation.PageCloseTransition
 import ru.tech.imageresizershrinker.core.ui.utils.animation.PageOpenTransition
-import ru.tech.imageresizershrinker.core.ui.utils.navigation.LocalNavController
+import ru.tech.imageresizershrinker.core.ui.utils.navigation.Screen
 import ru.tech.imageresizershrinker.core.ui.widget.other.EnhancedTopAppBar
 import ru.tech.imageresizershrinker.core.ui.widget.other.EnhancedTopAppBarType
 import ru.tech.imageresizershrinker.core.ui.widget.sheets.ProcessImagesPreferenceSheet
@@ -82,12 +83,12 @@ fun ImagePager(
     visible: Boolean,
     selectedUri: Uri?,
     uris: List<Uri>?,
+    onNavigate: (Screen) -> Unit,
     onUriSelected: (Uri?) -> Unit,
     onShare: (Uri) -> Unit,
     onDismiss: () -> Unit
 ) {
     val scope = rememberCoroutineScope()
-    val navController = LocalNavController.current
 
     AnimatedVisibility(
         visible = visible,
@@ -95,7 +96,9 @@ fun ImagePager(
         enter = PageOpenTransition,
         exit = PageCloseTransition
     ) {
-        val wantToEdit = rememberSaveable { mutableStateOf(false) }
+        var wantToEdit by rememberSaveable {
+            mutableStateOf(false)
+        }
         val state = rememberPagerState(
             initialPage = selectedUri?.let {
                 uris?.indexOf(it)
@@ -195,7 +198,7 @@ fun ImagePager(
                                     .size(40.dp)
                                     .clip(CircleShape)
                                     .clickable {
-                                        wantToEdit.value = true
+                                        wantToEdit = true
                                     },
                                 contentAlignment = Alignment.Center
                             ) {
@@ -240,11 +243,14 @@ fun ImagePager(
         ProcessImagesPreferenceSheet(
             uris = listOfNotNull(selectedUri),
             visible = wantToEdit,
-            navigate = { screen ->
+            onDismiss = {
+                wantToEdit = it
+            },
+            onNavigate = { screen ->
                 scope.launch {
-                    wantToEdit.value = false
+                    wantToEdit = false
                     delay(200)
-                    navController.navigate(screen)
+                    onNavigate(screen)
                 }
             }
         )

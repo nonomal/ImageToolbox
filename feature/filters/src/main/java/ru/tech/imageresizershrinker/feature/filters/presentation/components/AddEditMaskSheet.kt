@@ -17,7 +17,6 @@
 
 package ru.tech.imageresizershrinker.feature.filters.presentation.components
 
-import android.content.res.Configuration
 import android.graphics.Bitmap
 import android.net.Uri
 import androidx.activity.ComponentActivity
@@ -54,7 +53,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
-import androidx.compose.material3.windowsizeclass.WindowWidthSizeClass
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.MutableState
@@ -72,18 +70,14 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.asImageBitmap
-import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
 import androidx.exifinterface.media.ExifInterface
 import androidx.lifecycle.viewModelScope
-import coil.transform.Transformation
 import dagger.hilt.android.lifecycle.HiltViewModel
-import kotlinx.coroutines.launch
 import net.engawapg.lib.zoomable.rememberZoomState
-import ru.tech.imageresizershrinker.core.data.utils.toCoil
 import ru.tech.imageresizershrinker.core.domain.dispatchers.DispatchersHolder
 import ru.tech.imageresizershrinker.core.domain.image.ImageGetter
 import ru.tech.imageresizershrinker.core.domain.image.ImagePreviewCreator
@@ -98,7 +92,7 @@ import ru.tech.imageresizershrinker.core.resources.R
 import ru.tech.imageresizershrinker.core.settings.presentation.provider.LocalSettingsState
 import ru.tech.imageresizershrinker.core.ui.theme.outlineVariant
 import ru.tech.imageresizershrinker.core.ui.utils.BaseViewModel
-import ru.tech.imageresizershrinker.core.ui.utils.provider.LocalWindowSizeClass
+import ru.tech.imageresizershrinker.core.ui.utils.helper.isPortraitOrientationAsState
 import ru.tech.imageresizershrinker.core.ui.utils.state.update
 import ru.tech.imageresizershrinker.core.ui.widget.buttons.EnhancedButton
 import ru.tech.imageresizershrinker.core.ui.widget.buttons.EnhancedIconButton
@@ -149,10 +143,9 @@ fun AddEditMaskSheet(
             viewModel.setMask(mask = mask, bitmapUri = targetBitmapUri, masks = masks)
         }
 
-        val portrait =
-            LocalConfiguration.current.orientation != Configuration.ORIENTATION_LANDSCAPE || LocalWindowSizeClass.current.widthSizeClass == WindowWidthSizeClass.Compact
+        val isPortrait by isPortraitOrientationAsState()
 
-        val showAddFilterSheet = rememberSaveable { mutableStateOf(false) }
+        var showAddFilterSheet by rememberSaveable { mutableStateOf(false) }
 
         val context = LocalContext.current as ComponentActivity
         val toastHostState = LocalToastHostState.current
@@ -160,7 +153,7 @@ fun AddEditMaskSheet(
 
         var showExitDialog by remember { mutableStateOf(false) }
 
-        val showReorderSheet = rememberSaveable { mutableStateOf(false) }
+        var showReorderSheet by rememberSaveable { mutableStateOf(false) }
 
         val settingsState = LocalSettingsState.current
         var isEraserOn by rememberSaveable { mutableStateOf(false) }
@@ -254,7 +247,10 @@ fun AddEditMaskSheet(
                     modifier = Modifier
                         .fillMaxSize()
                         .clip(
-                            if (portrait) RoundedCornerShape(bottomStart = 24.dp, bottomEnd = 24.dp)
+                            if (isPortrait) RoundedCornerShape(
+                                bottomStart = 24.dp,
+                                bottomEnd = 24.dp
+                            )
                             else RectangleShape
                         )
                         .background(
@@ -287,7 +283,7 @@ fun AddEditMaskSheet(
                             drawMode = DrawMode.Pen,
                             modifier = Modifier
                                 .padding(16.dp)
-                                .aspectRatio(aspectRatio, portrait)
+                                .aspectRatio(aspectRatio, isPortrait)
                                 .fillMaxSize(),
                             panEnabled = panEnabled,
                             onDrawStart = {
@@ -305,7 +301,7 @@ fun AddEditMaskSheet(
             }
             Row {
                 val backgroundColor = MaterialTheme.colorScheme.surfaceContainerLow
-                if (!portrait) {
+                if (!isPortrait) {
                     Box(modifier = Modifier.weight(1.3f)) {
                         drawPreview()
                     }
@@ -316,7 +312,7 @@ fun AddEditMaskSheet(
                     modifier = Modifier.weight(1f)
                 ) {
                     imageStickyHeader(
-                        visible = portrait,
+                        visible = isPortrait,
                         internalHeight = internalHeight,
                         imageState = imageState,
                         onStateChange = {
@@ -331,7 +327,7 @@ fun AddEditMaskSheet(
                         Row(
                             Modifier
                                 .then(
-                                    if (imageState.isBlocked && portrait) Modifier.padding(
+                                    if (imageState.isBlocked && isPortrait) Modifier.padding(
                                         start = 16.dp,
                                         end = 16.dp,
                                         bottom = 16.dp
@@ -431,10 +427,11 @@ fun AddEditMaskSheet(
                                     listOf(
                                         DrawPathMode.Free,
                                         DrawPathMode.Lasso,
-                                        DrawPathMode.OutlinedRect,
-                                        DrawPathMode.OutlinedOval,
                                         DrawPathMode.Rect,
-                                        DrawPathMode.Oval
+                                        DrawPathMode.Oval,
+                                        DrawPathMode.Triangle,
+                                        DrawPathMode.Polygon(),
+                                        DrawPathMode.Star()
                                     )
                                 },
                                 value = drawPathMode,
@@ -513,7 +510,7 @@ fun AddEditMaskSheet(
                                                     )
                                                 },
                                                 onLongPress = {
-                                                    showReorderSheet.value = true
+                                                    showReorderSheet = true
                                                 },
                                                 showDragHandle = false,
                                                 onRemove = {
@@ -525,7 +522,7 @@ fun AddEditMaskSheet(
                                         }
                                         AddFilterButton(
                                             onClick = {
-                                                showAddFilterSheet.value = true
+                                                showAddFilterSheet = true
                                             },
                                             modifier = Modifier.padding(
                                                 horizontal = 16.dp
@@ -536,7 +533,7 @@ fun AddEditMaskSheet(
                             } else {
                                 AddFilterButton(
                                     onClick = {
-                                        showAddFilterSheet.value = true
+                                        showAddFilterSheet = true
                                     },
                                     modifier = Modifier.padding(16.dp)
                                 )
@@ -549,15 +546,17 @@ fun AddEditMaskSheet(
 
         AddFiltersSheet(
             visible = showAddFilterSheet,
+            onVisibleChange = { showAddFilterSheet = it },
             previewBitmap = null,
             onFilterPicked = { viewModel.addFilter(it.newInstance()) },
-            onFilterPickedWithParams = { viewModel.addFilter(it) },
-            onRequestFilterMapping = viewModel::filterToTransformation,
-            onRequestPreview = viewModel::filter
+            onFilterPickedWithParams = { viewModel.addFilter(it) }
         )
         FilterReorderSheet(
             filterList = viewModel.filterList,
             visible = showReorderSheet,
+            onDismiss = {
+                showReorderSheet = false
+            },
             updateOrder = viewModel::updateFiltersOrder
         )
 
@@ -783,9 +782,5 @@ private class AddMaskSheetViewModel @Inject constructor(
         image = bitmap,
         transformations = filters.map { filterProvider.filterToTransformation(it) }
     )
-
-    fun filterToTransformation(
-        uiFilter: UiFilter<*>
-    ): Transformation = filterProvider.filterToTransformation(uiFilter).toCoil()
 
 }

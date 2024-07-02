@@ -48,8 +48,10 @@ import androidx.compose.material.icons.rounded.Done
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.SheetValue
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
@@ -62,27 +64,30 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
+import ru.tech.imageresizershrinker.core.domain.utils.notNullAnd
 import ru.tech.imageresizershrinker.core.filters.presentation.model.UiFilter
 import ru.tech.imageresizershrinker.core.resources.R
-import ru.tech.imageresizershrinker.core.settings.presentation.provider.LocalSettingsInteractor
 import ru.tech.imageresizershrinker.core.settings.presentation.provider.LocalSettingsState
+import ru.tech.imageresizershrinker.core.settings.presentation.provider.LocalSimpleSettingInteractor
 import ru.tech.imageresizershrinker.core.ui.theme.outlineVariant
 import ru.tech.imageresizershrinker.core.ui.widget.buttons.EnhancedIconButton
 import ru.tech.imageresizershrinker.core.ui.widget.buttons.EraseModeButton
 import ru.tech.imageresizershrinker.core.ui.widget.buttons.PanModeButton
-import ru.tech.imageresizershrinker.core.ui.widget.controls.AlphaSelector
+import ru.tech.imageresizershrinker.core.ui.widget.controls.selection.AlphaSelector
 import ru.tech.imageresizershrinker.core.ui.widget.modifier.container
 import ru.tech.imageresizershrinker.core.ui.widget.other.DrawLockScreenOrientation
 import ru.tech.imageresizershrinker.core.ui.widget.other.EnhancedTopAppBar
 import ru.tech.imageresizershrinker.core.ui.widget.other.EnhancedTopAppBarType
 import ru.tech.imageresizershrinker.core.ui.widget.preferences.PreferenceRowSwitch
-import ru.tech.imageresizershrinker.core.ui.widget.text.Marquee
+import ru.tech.imageresizershrinker.core.ui.widget.text.marquee
 import ru.tech.imageresizershrinker.feature.draw.domain.DrawMode
 import ru.tech.imageresizershrinker.feature.draw.domain.DrawPathMode
+import ru.tech.imageresizershrinker.feature.draw.domain.coerceIn
 import ru.tech.imageresizershrinker.feature.draw.domain.pt
 import ru.tech.imageresizershrinker.feature.draw.presentation.components.BitmapDrawer
 import ru.tech.imageresizershrinker.feature.draw.presentation.components.BrushSoftnessSelector
@@ -125,7 +130,7 @@ fun DrawEditOption(
             )
         }
 
-        val showPickColorSheet = rememberSaveable { mutableStateOf(false) }
+        var showPickColorSheet by rememberSaveable { mutableStateOf(false) }
 
         var isEraserOn by rememberSaveable { mutableStateOf(false) }
 
@@ -141,6 +146,14 @@ fun DrawEditOption(
         }
         var drawPathMode by rememberSaveable(stateSaver = DrawPathModeSaver) {
             mutableStateOf(DrawPathMode.Free)
+        }
+
+        LaunchedEffect(drawMode, strokeWidth) {
+            strokeWidth = if (drawMode is DrawMode.Image) {
+                strokeWidth.coerceIn(10.pt, 120.pt)
+            } else {
+                strokeWidth.coerceIn(1.pt, 100.pt)
+            }
         }
 
         val secondaryControls = @Composable {
@@ -197,22 +210,42 @@ fun DrawEditOption(
             visible = visible,
             onDismiss = onDismiss,
             useScaffold = useScaffold,
-            controls = {
+            controls = { scaffoldState ->
+                val focus = LocalFocusManager.current
+                LaunchedEffect(scaffoldState?.bottomSheetState?.currentValue, focus) {
+                    val current = scaffoldState?.bottomSheetState?.currentValue
+                    if (current.notNullAnd { it != SheetValue.Expanded }) {
+                        focus.clearFocus()
+                    }
+                }
+
                 if (!useScaffold) secondaryControls()
                 OpenColorPickerCard(
                     onOpen = {
-                        showPickColorSheet.value = true
+                        showPickColorSheet = true
                     }
                 )
-                LineWidthSelector(
-                    modifier = Modifier.padding(
-                        start = 16.dp,
-                        end = 16.dp,
-                        top = 16.dp
-                    ),
-                    value = strokeWidth.value,
-                    onValueChange = { strokeWidth = it.pt }
-                )
+                AnimatedVisibility(
+                    visible = drawPathMode.isStroke,
+                    enter = fadeIn() + expandVertically(),
+                    exit = fadeOut() + shrinkVertically()
+                ) {
+                    LineWidthSelector(
+                        modifier = Modifier.padding(
+                            start = 16.dp,
+                            end = 16.dp,
+                            top = 16.dp
+                        ),
+                        title = if (drawMode is DrawMode.Text) {
+                            stringResource(R.string.font_size)
+                        } else stringResource(R.string.line_width),
+                        valueRange = if (drawMode is DrawMode.Image) {
+                            10f..120f
+                        } else 1f..100f,
+                        value = strokeWidth.value,
+                        onValueChange = { strokeWidth = it.pt }
+                    )
+                }
                 AnimatedVisibility(
                     visible = drawMode !is DrawMode.Highlighter && drawMode !is DrawMode.PathEffect,
                     enter = fadeIn() + expandVertically(),
@@ -227,7 +260,7 @@ fun DrawEditOption(
                 }
                 Spacer(modifier = Modifier.height(16.dp))
                 AnimatedVisibility(
-                    visible = drawMode !is DrawMode.PathEffect,
+                    visible = drawMode !is DrawMode.PathEffect && drawMode !is DrawMode.Image,
                     enter = fadeIn() + expandVertically(),
                     exit = fadeOut() + shrinkVertically()
                 ) {
@@ -253,6 +286,7 @@ fun DrawEditOption(
                         bottom = 16.dp
                     ),
                     value = drawMode,
+                    strokeWidth = strokeWidth,
                     onValueChange = { drawMode = it }
                 )
                 DrawPathModeSelector(
@@ -262,9 +296,26 @@ fun DrawEditOption(
                         bottom = 16.dp
                     ),
                     value = drawPathMode,
-                    onValueChange = { drawPathMode = it }
+                    onValueChange = { drawPathMode = it },
+                    values = remember(drawMode) {
+                        derivedStateOf {
+                            if (drawMode !is DrawMode.Text && drawMode !is DrawMode.Image) {
+                                DrawPathMode.entries
+                            } else {
+                                listOf(
+                                    DrawPathMode.Free,
+                                    DrawPathMode.Line,
+                                    DrawPathMode.OutlinedRect,
+                                    DrawPathMode.OutlinedOval,
+                                    DrawPathMode.OutlinedTriangle,
+                                    DrawPathMode.OutlinedPolygon(),
+                                    DrawPathMode.OutlinedStar()
+                                )
+                            }
+                        }
+                    }.value
                 )
-                val settingsInteractor = LocalSettingsInteractor.current
+                val settingsInteractor = LocalSimpleSettingInteractor.current
                 val scope = rememberCoroutineScope()
                 PreferenceRowSwitch(
                     modifier = Modifier
@@ -318,11 +369,10 @@ fun DrawEditOption(
                         }
                     },
                     title = {
-                        Marquee {
-                            Text(
-                                text = stringResource(R.string.draw),
-                            )
-                        }
+                        Text(
+                            text = stringResource(R.string.draw),
+                            modifier = Modifier.marquee()
+                        )
                     }
                 )
             }
@@ -370,6 +420,9 @@ fun DrawEditOption(
         }
         PickColorFromImageSheet(
             visible = showPickColorSheet,
+            onDismiss = {
+                showPickColorSheet = false
+            },
             bitmap = stateBitmap,
             onColorChange = { color = it },
             color = color

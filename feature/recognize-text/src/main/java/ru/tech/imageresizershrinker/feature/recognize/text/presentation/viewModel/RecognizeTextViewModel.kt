@@ -34,7 +34,6 @@ import com.smarttoolfactory.cropper.settings.CropOutlineProperty
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import ru.tech.imageresizershrinker.core.data.utils.asDomain
@@ -43,6 +42,8 @@ import ru.tech.imageresizershrinker.core.domain.dispatchers.DispatchersHolder
 import ru.tech.imageresizershrinker.core.domain.image.ImageGetter
 import ru.tech.imageresizershrinker.core.domain.image.ImageScaler
 import ru.tech.imageresizershrinker.core.domain.image.ImageTransformer
+import ru.tech.imageresizershrinker.core.domain.image.ShareProvider
+import ru.tech.imageresizershrinker.core.domain.utils.smartJob
 import ru.tech.imageresizershrinker.core.filters.domain.FilterProvider
 import ru.tech.imageresizershrinker.core.filters.domain.model.Filter
 import ru.tech.imageresizershrinker.core.filters.presentation.model.UiContrastFilter
@@ -73,6 +74,7 @@ class RecognizeTextViewModel @Inject constructor(
     private val imageTransformer: ImageTransformer<Bitmap>,
     private val filterProvider: FilterProvider<Bitmap>,
     private val imageScaler: ImageScaler<Bitmap>,
+    private val shareProvider: ShareProvider<Bitmap>,
     dispatchersHolder: DispatchersHolder
 ) : BaseViewModel(dispatchersHolder) {
 
@@ -146,12 +148,12 @@ class RecognizeTextViewModel @Inject constructor(
     val isTextLoading: Boolean
         get() = textLoadingProgress in 0..100
 
-    private var longsJob: Job? = null
+    private var loadingJob: Job? by smartJob()
+
     private fun loadLanguages(
         onComplete: suspend () -> Unit = {}
     ) {
-        longsJob?.cancel()
-        longsJob = viewModelScope.launch {
+        loadingJob = viewModelScope.launch {
             delay(200L)
             val data = imageTextReader.getLanguages(recognitionType)
             _selectedLanguages.update { ocrLanguages ->
@@ -215,15 +217,15 @@ class RecognizeTextViewModel @Inject constructor(
         }
     }
 
-    private var job: Job? = null
+    private var recognitionJob: Job? by smartJob {
+        _textLoadingProgress.update { -1 }
+    }
 
     fun startRecognition(
         onError: (Throwable) -> Unit,
         onRequestDownload: (List<DownloadData>) -> Unit
     ) {
-        _textLoadingProgress.update { -1 }
-        job?.cancel()
-        job = viewModelScope.launch {
+        recognitionJob = viewModelScope.launch {
             if (uri == null) return@launch
             delay(400L)
             _textLoadingProgress.update { 0 }
@@ -304,7 +306,7 @@ class RecognizeTextViewModel @Inject constructor(
             }
             _selectedLanguages.update { ocrLanguages }
             _recognitionData.update { null }
-            job?.cancel()
+            recognitionJob?.cancel()
             _textLoadingProgress.update { -1 }
         }
     }
@@ -405,6 +407,15 @@ class RecognizeTextViewModel @Inject constructor(
 
     fun setOcrEngineMode(mode: OcrEngineMode) {
         _ocrEngineMode.update { mode }
+    }
+
+    fun shareRecognizedText(onComplete: () -> Unit) {
+        recognitionData?.text?.let {
+            shareProvider.shareText(
+                value = it,
+                onComplete = onComplete
+            )
+        }
     }
 
 }

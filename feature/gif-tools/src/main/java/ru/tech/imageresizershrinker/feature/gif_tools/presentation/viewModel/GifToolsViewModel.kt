@@ -26,15 +26,10 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.exifinterface.media.ExifInterface
-import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
-import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.onCompletion
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
-import ru.tech.imageresizershrinker.core.di.DefaultDispatcher
 import ru.tech.imageresizershrinker.core.domain.dispatchers.DispatchersHolder
 import ru.tech.imageresizershrinker.core.domain.image.ImageCompressor
 import ru.tech.imageresizershrinker.core.domain.image.ImageGetter
@@ -48,12 +43,13 @@ import ru.tech.imageresizershrinker.core.domain.saving.model.FileSaveTarget
 import ru.tech.imageresizershrinker.core.domain.saving.model.ImageSaveTarget
 import ru.tech.imageresizershrinker.core.domain.saving.model.SaveResult
 import ru.tech.imageresizershrinker.core.domain.saving.model.SaveTarget
+import ru.tech.imageresizershrinker.core.domain.saving.model.onSuccess
+import ru.tech.imageresizershrinker.core.domain.utils.smartJob
 import ru.tech.imageresizershrinker.core.ui.utils.BaseViewModel
 import ru.tech.imageresizershrinker.core.ui.utils.navigation.Screen
 import ru.tech.imageresizershrinker.core.ui.utils.state.update
 import ru.tech.imageresizershrinker.feature.gif_tools.domain.GifConverter
 import ru.tech.imageresizershrinker.feature.gif_tools.domain.GifParams
-import java.io.OutputStream
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -127,14 +123,17 @@ class GifToolsViewModel @Inject constructor(
         }
     }
 
-    private var collectionJob: Job? = null
+    private var collectionJob: Job? by smartJob {
+        _isLoading.update { false }
+    }
+
     fun setGifUri(uri: Uri) {
         clearAll()
         _type.update {
             Screen.GifTools.Type.GifToImage(uri)
         }
         updateGifFrames(ImageFrames.All)
-        collectionJob?.cancel()
+
         collectionJob = viewModelScope.launch(defaultDispatcher) {
             _isLoading.update { true }
             _isLoadingGifImages.update { true }
@@ -164,44 +163,44 @@ class GifToolsViewModel @Inject constructor(
         savingJob?.cancel()
         savingJob = null
         updateParams(GifParams.Default)
+        registerChangesCleared()
     }
 
     fun updateGifFrames(imageFrames: ImageFrames) {
         _imageFrames.update { imageFrames }
+        registerChanges()
     }
 
     fun clearConvertedImagesSelection() = updateGifFrames(ImageFrames.ManualSelection(emptyList()))
 
     fun selectAllConvertedImages() = updateGifFrames(ImageFrames.All)
 
-    private var savingJob: Job? = null
+    private var savingJob: Job? by smartJob {
+        _isSaving.update { false }
+    }
 
     fun saveGifTo(
-        outputStream: OutputStream?,
-        onComplete: (Throwable?) -> Unit
+        uri: Uri,
+        onResult: (SaveResult) -> Unit
     ) {
-        _isSaving.value = false
-        savingJob?.cancel()
-        savingJob = viewModelScope.launch {
-            withContext(defaultDispatcher) {
-                _isSaving.value = true
-                kotlin.runCatching {
-                    outputStream?.use {
-                        it.write(gifData)
-                    }
-                }.exceptionOrNull().let(onComplete)
-                _isSaving.value = false
-                gifData = null
+        savingJob = viewModelScope.launch(defaultDispatcher) {
+            _isSaving.value = true
+            gifData?.let { byteArray ->
+                fileController.writeBytes(
+                    uri = uri.toString(),
+                    block = { it.writeBytes(byteArray) }
+                ).also(onResult).onSuccess(::registerSave)
             }
+            _isSaving.value = false
+            gifData = null
         }
     }
 
     fun saveBitmaps(
-        onGifSaveResult: (String) -> Unit,
-        onResult: (List<SaveResult>, String) -> Unit
+        oneTimeSaveLocationUri: String?,
+        onGifSaveResult: (filename: String) -> Unit,
+        onResult: (List<SaveResult>) -> Unit
     ) {
-        _isSaving.value = false
-        savingJob?.cancel()
         savingJob = viewModelScope.launch(defaultDispatcher) {
             _isSaving.value = true
             _left.value = 1
@@ -220,13 +219,13 @@ class GifToolsViewModel @Inject constructor(
                                     _isSaving.value = false
                                     savingJob?.cancel()
                                     onResult(
-                                        listOf(SaveResult.Error.MissingPermissions), ""
+                                        listOf(SaveResult.Error.MissingPermissions)
                                     )
                                 }
                                 _left.value = gifFrames.getFramePositions(it).size
                             }
                         ).onCompletion {
-                            onResult(results, fileController.savingPath)
+                            onResult(results.onSuccess(::registerSave))
                         }.collect { uri ->
                             imageGetter.getImage(
                                 data = uri,
@@ -253,7 +252,8 @@ class GifToolsViewModel @Inject constructor(
                                                 )
                                             )
                                         ),
-                                        keepOriginalMetadata = false
+                                        keepOriginalMetadata = false,
+                                        oneTimeSaveLocationUri = oneTimeSaveLocationUri
                                     )
                                 )
                             } ?: results.add(
@@ -272,8 +272,11 @@ class GifToolsViewModel @Inject constructor(
                             params = params,
                             onProgress = {
                                 _done.update { it + 1 }
+                            },
+                            onError = {
+                                onResult(listOf(SaveResult.Error.Exception(it)))
                             }
-                        ).also {
+                        )?.also {
                             val timeStamp = SimpleDateFormat(
                                 "yyyy-MM-dd_HH-mm-ss",
                                 Locale.getDefault()
@@ -298,13 +301,14 @@ class GifToolsViewModel @Inject constructor(
                         results.add(
                             fileController.save(
                                 saveTarget = JxlSaveTarget(uri, jxlBytes),
-                                keepOriginalMetadata = true
+                                keepOriginalMetadata = true,
+                                oneTimeSaveLocationUri = oneTimeSaveLocationUri
                             )
                         )
                         _done.update { it + 1 }
                     }
 
-                    onResult(results, fileController.savingPath)
+                    onResult(results.onSuccess(::registerSave))
                 }
 
                 null -> Unit
@@ -350,6 +354,7 @@ class GifToolsViewModel @Inject constructor(
             _type.update {
                 Screen.GifTools.Type.ImageToGif(uris)
             }
+            registerChanges()
         }
     }
 
@@ -361,6 +366,7 @@ class GifToolsViewModel @Inject constructor(
 
                 Screen.GifTools.Type.ImageToGif(newUris)
             }
+            registerChanges()
         }
     }
 
@@ -374,11 +380,13 @@ class GifToolsViewModel @Inject constructor(
 
                 Screen.GifTools.Type.ImageToGif(newUris)
             }
+            registerChanges()
         }
     }
 
     fun setImageFormat(imageFormat: ImageFormat) {
         _imageFormat.update { imageFormat }
+        registerChanges()
     }
 
     fun setQuality(quality: Quality) {
@@ -387,11 +395,10 @@ class GifToolsViewModel @Inject constructor(
 
     fun updateParams(params: GifParams) {
         _params.update { params }
+        registerChanges()
     }
 
     fun performSharing(onComplete: () -> Unit) {
-        _isSaving.value = false
-        savingJob?.cancel()
         savingJob = viewModelScope.launch(defaultDispatcher) {
             _isSaving.value = true
             _left.value = 1
@@ -416,8 +423,9 @@ class GifToolsViewModel @Inject constructor(
                             params = params,
                             onProgress = {
                                 _done.update { it + 1 }
-                            }
-                        ).also { byteArray ->
+                            },
+                            onError = { }
+                        )?.also { byteArray ->
                             val timeStamp = SimpleDateFormat(
                                 "yyyy-MM-dd_HH-mm-ss",
                                 Locale.getDefault()
@@ -465,6 +473,7 @@ class GifToolsViewModel @Inject constructor(
         _jxlQuality.update {
             (quality as? Quality.Jxl) ?: Quality.Jxl()
         }
+        registerChanges()
     }
 
 }

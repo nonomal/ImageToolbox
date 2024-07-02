@@ -89,4 +89,9 @@ internal object SettingKeys {
     val USE_FULLSCREEN_SETTINGS = booleanPreferencesKey("USE_FULLSCREEN_SETTINGS")
     val SWITCH_TYPE = intPreferencesKey("SWITCH_TYPE")
     val DEFAULT_DRAW_LINE_WIDTH = floatPreferencesKey("DEFAULT_DRAW_LINE_WIDTH")
+    val ONE_TIME_SAVE_LOCATIONS = stringPreferencesKey("ONE_TIME_SAVE_LOCATIONS")
+    val OPEN_EDIT_INSTEAD_OF_PREVIEW = booleanPreferencesKey("OPEN_EDIT_INSTEAD_OF_PREVIEW")
+    val CAN_ENTER_PRESETS_BY_TEXT_FIELD = booleanPreferencesKey("CAN_ENTER_PRESETS_BY_TEXT_FIELD")
+    val DONATE_DIALOG_OPEN_COUNT = intPreferencesKey("DONATE_DIALOG_OPEN_COUNT")
+    val COLOR_BLIND_TYPE = intPreferencesKey("COLOR_BLIND_TYPE")
 }

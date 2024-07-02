@@ -28,8 +28,6 @@ import androidx.exifinterface.media.ExifInterface
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 import ru.tech.imageresizershrinker.core.domain.dispatchers.DispatchersHolder
 import ru.tech.imageresizershrinker.core.domain.image.ImageCompressor
 import ru.tech.imageresizershrinker.core.domain.image.ImageGetter
@@ -40,9 +38,10 @@ import ru.tech.imageresizershrinker.core.domain.image.model.Quality
 import ru.tech.imageresizershrinker.core.domain.saving.FileController
 import ru.tech.imageresizershrinker.core.domain.saving.model.ImageSaveTarget
 import ru.tech.imageresizershrinker.core.domain.saving.model.SaveResult
+import ru.tech.imageresizershrinker.core.domain.utils.smartJob
 import ru.tech.imageresizershrinker.core.ui.utils.BaseViewModel
+import ru.tech.imageresizershrinker.core.ui.utils.state.update
 import javax.inject.Inject
-import kotlin.random.Random
 
 @HiltViewModel
 class LoadNetImageViewModel @Inject constructor(
@@ -66,14 +65,17 @@ class LoadNetImageViewModel @Inject constructor(
         _bitmap.value = bitmap
     }
 
-    private var savingJob: Job? = null
+    private var savingJob: Job? by smartJob {
+        _isSaving.update { false }
+    }
 
     fun saveBitmap(
         link: String,
+        oneTimeSaveLocationUri: String?,
         onComplete: (saveResult: SaveResult) -> Unit
-    ) = viewModelScope.launch {
-        withContext(defaultDispatcher) {
-            _isSaving.value = true
+    ) {
+        savingJob = viewModelScope.launch {
+            _isSaving.update { true }
             imageGetter.getImage(data = link)?.let { bitmap ->
                 onComplete(
                     fileController.save(
@@ -90,16 +92,13 @@ class LoadNetImageViewModel @Inject constructor(
                                 quality = Quality.Base(100)
                             )
                         ),
-                        keepOriginalMetadata = false
+                        keepOriginalMetadata = false,
+                        oneTimeSaveLocationUri = oneTimeSaveLocationUri
                     )
                 )
             }
-            _isSaving.value = false
+            _isSaving.update { false }
         }
-    }.also {
-        _isSaving.value = false
-        savingJob?.cancel()
-        savingJob = it
     }
 
     fun cacheImage(
@@ -155,8 +154,7 @@ class LoadNetImageViewModel @Inject constructor(
                         width = image.width,
                         height = image.height,
                         imageFormat = ImageFormat.Png.Lossless
-                    ),
-                    name = Random.nextInt().toString()
+                    )
                 )?.let { uri ->
                     onComplete(uri.toUri())
                 }

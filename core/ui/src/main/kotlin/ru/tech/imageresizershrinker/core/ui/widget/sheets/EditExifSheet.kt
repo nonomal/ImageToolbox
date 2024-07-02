@@ -40,7 +40,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -56,9 +55,10 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.exifinterface.media.ExifInterface
-import ru.tech.imageresizershrinker.core.domain.image.model.Metadata
+import ru.tech.imageresizershrinker.core.domain.image.model.MetadataTag
 import ru.tech.imageresizershrinker.core.resources.R
 import ru.tech.imageresizershrinker.core.resources.icons.Exif
+import ru.tech.imageresizershrinker.core.ui.utils.helper.ImageUtils.localizedName
 import ru.tech.imageresizershrinker.core.ui.utils.helper.ImageUtils.toMap
 import ru.tech.imageresizershrinker.core.ui.widget.buttons.EnhancedButton
 import ru.tech.imageresizershrinker.core.ui.widget.buttons.EnhancedIconButton
@@ -70,11 +70,12 @@ import ru.tech.imageresizershrinker.core.ui.widget.text.TitleItem
 
 @Composable
 fun EditExifSheet(
-    visible: MutableState<Boolean>,
+    visible: Boolean,
+    onDismiss: () -> Unit,
     exif: ExifInterface?,
     onClearExif: () -> Unit,
-    onUpdateTag: (String, String) -> Unit,
-    onRemoveTag: (String) -> Unit
+    onUpdateTag: (MetadataTag, String) -> Unit,
+    onRemoveTag: (MetadataTag) -> Unit
 ) {
     var showClearExifDialog by rememberSaveable { mutableStateOf(false) }
     val showAddExifDialog = rememberSaveable { mutableStateOf(false) }
@@ -84,22 +85,19 @@ fun EditExifSheet(
     }
 
     SimpleSheet(
-        nestedScrollEnabled = false,
-        endConfirmButtonPadding = 0.dp,
         confirmButton = {
             EnhancedButton(
-                onClick = { visible.value = false }
+                onClick = onDismiss
             ) {
                 AutoSizeText(stringResource(R.string.ok))
             }
         },
         title = {
-            val count =
-                remember(exifMap) {
-                    Metadata.metaTags.count {
-                        it !in (exifMap?.keys ?: emptyList())
-                    }
+            val count = remember(exifMap) {
+                MetadataTag.entries.count {
+                    it !in (exifMap?.keys ?: emptyList())
                 }
+            }
             Row {
                 if (exifMap?.isEmpty() == false) {
                     EnhancedButton(
@@ -136,7 +134,10 @@ fun EditExifSheet(
                 }
             }
         },
-        visible = visible
+        visible = visible,
+        onDismiss = {
+            if (!it) onDismiss()
+        }
     ) {
         val data by remember(exifMap) {
             derivedStateOf {
@@ -163,7 +164,7 @@ fun EditExifSheet(
                         ) {
                             Row {
                                 Text(
-                                    text = tag,
+                                    text = tag.localizedName,
                                     fontSize = 16.sp,
                                     modifier = Modifier
                                         .padding(12.dp)

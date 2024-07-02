@@ -22,11 +22,12 @@ import ru.tech.imageresizershrinker.core.domain.saving.model.SaveResult
 import ru.tech.imageresizershrinker.core.domain.saving.model.SaveTarget
 
 interface FileController {
-    val savingPath: String
+    val defaultSavingPath: String
 
     suspend fun save(
         saveTarget: SaveTarget,
-        keepOriginalMetadata: Boolean
+        keepOriginalMetadata: Boolean,
+        oneTimeSaveLocationUri: String? = null
     ): SaveResult
 
     fun getSize(uri: String): Long?
@@ -45,4 +46,11 @@ interface FileController {
     fun clearCache(onComplete: (String) -> Unit = {})
 
     fun getReadableCacheSize(): String
+
+    suspend fun readBytes(uri: String): ByteArray
+
+    suspend fun writeBytes(
+        uri: String,
+        block: suspend (Writeable) -> Unit
+    ): SaveResult
 }

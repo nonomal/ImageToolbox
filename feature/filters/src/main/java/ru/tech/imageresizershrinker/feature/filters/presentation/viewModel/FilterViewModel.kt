@@ -29,13 +29,9 @@ import androidx.compose.ui.graphics.Path
 import androidx.core.net.toUri
 import androidx.exifinterface.media.ExifInterface
 import androidx.lifecycle.viewModelScope
-import coil.transform.Transformation
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
-import ru.tech.imageresizershrinker.core.data.utils.toCoil
 import ru.tech.imageresizershrinker.core.domain.dispatchers.DispatchersHolder
 import ru.tech.imageresizershrinker.core.domain.image.ImageCompressor
 import ru.tech.imageresizershrinker.core.domain.image.ImageGetter
@@ -46,10 +42,11 @@ import ru.tech.imageresizershrinker.core.domain.image.ShareProvider
 import ru.tech.imageresizershrinker.core.domain.image.model.ImageFormat
 import ru.tech.imageresizershrinker.core.domain.image.model.ImageInfo
 import ru.tech.imageresizershrinker.core.domain.image.model.Quality
-import ru.tech.imageresizershrinker.core.domain.model.IntegerSize
 import ru.tech.imageresizershrinker.core.domain.saving.FileController
 import ru.tech.imageresizershrinker.core.domain.saving.model.ImageSaveTarget
 import ru.tech.imageresizershrinker.core.domain.saving.model.SaveResult
+import ru.tech.imageresizershrinker.core.domain.saving.model.onSuccess
+import ru.tech.imageresizershrinker.core.domain.utils.smartJob
 import ru.tech.imageresizershrinker.core.filters.domain.FilterProvider
 import ru.tech.imageresizershrinker.core.filters.presentation.model.UiFilter
 import ru.tech.imageresizershrinker.core.ui.transformation.ImageInfoTransformation
@@ -61,7 +58,6 @@ import ru.tech.imageresizershrinker.feature.filters.presentation.components.Basi
 import ru.tech.imageresizershrinker.feature.filters.presentation.components.MaskingFilterState
 import ru.tech.imageresizershrinker.feature.filters.presentation.components.UiFilterMask
 import javax.inject.Inject
-import kotlin.random.Random
 
 @HiltViewModel
 class FilterViewModel @Inject constructor(
@@ -77,9 +73,6 @@ class FilterViewModel @Inject constructor(
     private val shareProvider: ShareProvider<Bitmap>,
     dispatchersHolder: DispatchersHolder
 ) : BaseViewModel(dispatchersHolder) {
-
-    private val _bitmapSize = mutableStateOf<Long?>(null)
-    val bitmapSize by _bitmapSize
 
     private val _canSave = mutableStateOf(false)
     val canSave by _canSave
@@ -113,15 +106,13 @@ class FilterViewModel @Inject constructor(
     private val _imageInfo = mutableStateOf(ImageInfo())
     val imageInfo by _imageInfo
 
-    private val _needToApplyFilters = mutableStateOf(true)
-    val needToApplyFilters by _needToApplyFilters
-
     private val _filterType: MutableState<Screen.Filter.Type?> = mutableStateOf(null)
     val filterType: Screen.Filter.Type? by _filterType
 
     fun setImageFormat(imageFormat: ImageFormat) {
         _imageInfo.value = _imageInfo.value.copy(imageFormat = imageFormat)
         updatePreview()
+        registerChanges()
     }
 
     fun setBasicFilter(uris: List<Uri>?) {
@@ -139,48 +130,50 @@ class FilterViewModel @Inject constructor(
     }
 
     fun updateUrisSilently(removedUri: Uri) {
-        viewModelScope.launch {
-            withContext(defaultDispatcher) {
-                val state = _basicFilterState.value
-                if (state.selectedUri == removedUri) {
-                    val index = state.uris?.indexOf(removedUri) ?: -1
-                    if (index == 0) {
-                        state.uris?.getOrNull(1)?.let {
-                            _basicFilterState.update { f ->
-                                f.copy(selectedUri = it)
-                            }
-                            setBitmap(it)
+        viewModelScope.launch(defaultDispatcher) {
+            val state = _basicFilterState.value
+            if (state.selectedUri == removedUri) {
+                val index = state.uris?.indexOf(removedUri) ?: -1
+                if (index == 0) {
+                    state.uris?.getOrNull(1)?.let {
+                        _basicFilterState.update { f ->
+                            f.copy(selectedUri = it)
                         }
-                    } else {
-                        state.uris?.getOrNull(index - 1)?.let {
-                            _basicFilterState.update { f ->
-                                f.copy(selectedUri = it)
-                            }
-                            setBitmap(it)
+                        setBitmap(it)
+                    }
+                } else {
+                    state.uris?.getOrNull(index - 1)?.let {
+                        _basicFilterState.update { f ->
+                            f.copy(selectedUri = it)
                         }
+                        setBitmap(it)
                     }
                 }
-                _basicFilterState.update {
-                    it.copy(
-                        uris = it.uris?.toMutableList()?.apply {
-                            remove(removedUri)
-                        }
-                    )
-                }
+            }
+            _basicFilterState.update {
+                it.copy(
+                    uris = it.uris?.toMutableList()?.apply {
+                        remove(removedUri)
+                    }
+                )
             }
         }
     }
 
     fun setKeepExif(boolean: Boolean) {
         _keepExif.value = boolean
+        registerChanges()
     }
 
-    private var savingJob: Job? = null
+    private var savingJob: Job? by smartJob {
+        _isSaving.update { false }
+    }
 
     fun saveBitmaps(
-        onResult: (List<SaveResult>, String) -> Unit
-    ) = viewModelScope.launch {
-        withContext(defaultDispatcher) {
+        oneTimeSaveLocationUri: String?,
+        onResult: (List<SaveResult>) -> Unit
+    ) {
+        savingJob = viewModelScope.launch(defaultDispatcher) {
             _isSaving.value = true
             val results = mutableListOf<SaveResult>()
             _done.value = 0
@@ -209,7 +202,9 @@ class FilterViewModel @Inject constructor(
                                         height = localBitmap.height
                                     )
                                 )
-                            ), keepOriginalMetadata = keepExif
+                            ),
+                            keepOriginalMetadata = keepExif,
+                            oneTimeSaveLocationUri = oneTimeSaveLocationUri
                         )
                     )
                 } ?: results.add(
@@ -218,43 +213,42 @@ class FilterViewModel @Inject constructor(
 
                 _done.value += 1
             }
-            onResult(results, fileController.savingPath)
+            onResult(results.onSuccess(::registerSave))
             _isSaving.value = false
         }
-    }.also {
-        _isSaving.value = false
-        savingJob?.cancel()
-        savingJob = it
     }
 
     fun setBitmap(uri: Uri) {
-        viewModelScope.launch {
-            withContext(defaultDispatcher) {
-                _isImageLoading.value = true
-                val req = imageGetter.getImage(uri = uri.toString())
-                val tempBitmap = req?.image
-                val size = tempBitmap?.let { it.width to it.height }
-                _bitmap.value = imageScaler.scaleUntilCanShow(tempBitmap)
-                _imageInfo.value = _imageInfo.value.copy(
+        viewModelScope.launch(defaultDispatcher) {
+            _isImageLoading.update { true }
+            val req = imageGetter.getImage(uri = uri.toString())
+            val tempBitmap = req?.image
+            val size = tempBitmap?.let { it.width to it.height }
+            _bitmap.update {
+                imageScaler.scaleUntilCanShow(tempBitmap)
+            }
+            _imageInfo.update {
+                it.copy(
                     width = size?.first ?: 0,
                     height = size?.second ?: 0,
                     imageFormat = req?.imageInfo?.imageFormat ?: ImageFormat.Default()
                 )
-                updatePreview()
-                _basicFilterState.update { f ->
-                    f.copy(selectedUri = uri)
-                }
-                _isImageLoading.value = false
             }
+            updatePreview()
+            _basicFilterState.update {
+                it.copy(selectedUri = uri)
+            }
+            _isImageLoading.update { false }
         }
     }
 
     private fun updateCanSave() {
         _canSave.value =
             _bitmap.value != null && ((_filterType.value is Screen.Filter.Type.Basic && _basicFilterState.value.filters.isNotEmpty()) || (_filterType.value is Screen.Filter.Type.Masking && _maskingFilterState.value.masks.isNotEmpty()))
+        registerChanges()
     }
 
-    private var filterJob: Job? = null
+    private var filterJob: Job? by smartJob()
 
     fun <T : Any> updateFilter(
         value: T,
@@ -267,7 +261,7 @@ class FilterViewModel @Inject constructor(
             _basicFilterState.update {
                 it.copy(filters = list)
             }
-        }.exceptionOrNull()?.let { throwable ->
+        }.onFailure { throwable ->
             showError(throwable)
             list[index] = list[index].newInstance()
             _basicFilterState.update {
@@ -275,16 +269,16 @@ class FilterViewModel @Inject constructor(
             }
         }
         updateCanSave()
-        _needToApplyFilters.value = true
+        updatePreview()
     }
 
     fun updateFiltersOrder(value: List<UiFilter<*>>) {
         _basicFilterState.update {
             it.copy(filters = value)
         }
-        filterJob?.cancel()
+        filterJob = null
         updateCanSave()
-        _needToApplyFilters.value = true
+        updatePreview()
     }
 
     fun addFilter(filter: UiFilter<*>) {
@@ -292,8 +286,8 @@ class FilterViewModel @Inject constructor(
             it.copy(filters = it.filters + filter)
         }
         updateCanSave()
-        filterJob?.cancel()
-        _needToApplyFilters.value = true
+        filterJob = null
+        updatePreview()
     }
 
     fun removeFilterAtIndex(index: Int) {
@@ -305,15 +299,13 @@ class FilterViewModel @Inject constructor(
             )
         }
         updateCanSave()
-        filterJob?.cancel()
-        _needToApplyFilters.value = true
+        filterJob = null
+        updatePreview()
     }
 
     fun canShow(): Boolean = bitmap?.let { imagePreviewCreator.canShow(it) } ?: false
 
     fun performSharing(onComplete: () -> Unit) {
-        _isSaving.value = false
-        savingJob?.cancel()
         savingJob = viewModelScope.launch {
             _isSaving.value = true
             _done.value = 0
@@ -366,7 +358,7 @@ class FilterViewModel @Inject constructor(
                                     height = bitmap.height
                                 ),
                                 onComplete = {
-                                    _isSaving.value = true
+                                    _isSaving.value = false
                                     onComplete()
                                 }
                             )
@@ -384,43 +376,43 @@ class FilterViewModel @Inject constructor(
         updatePreview()
     }
 
-    fun updatePreview() {
+    private fun updatePreview() {
         _bitmap.value?.let { bitmap ->
-            filterJob?.cancel()
-            filterJob = viewModelScope.launch {
-                withContext(defaultDispatcher) {
-                    delay(200L)
-                    _isImageLoading.value = true
-                    when (filterType) {
-                        is Screen.Filter.Type.Basic -> {
-                            _previewBitmap.value = imagePreviewCreator.createPreview(
-                                image = bitmap,
+            filterJob = viewModelScope.launch(defaultDispatcher) {
+                delay(200L)
+                _isImageLoading.value = true
+                when (filterType) {
+                    is Screen.Filter.Type.Basic -> {
+                        _previewBitmap.value = imagePreviewCreator.createPreview(
+                            image = bitmap,
+                            imageInfo = imageInfo,
+                            transformations = _basicFilterState.value.filters.map {
+                                filterProvider.filterToTransformation(it)
+                            },
+                            onGetByteCount = { size ->
+                                _imageInfo.update { it.copy(sizeInBytes = size) }
+                            }
+                        )
+                    }
+
+                    is Screen.Filter.Type.Masking -> {
+                        _previewBitmap.value = filterMaskApplier.filterByMasks(
+                            filterMasks = _maskingFilterState.value.masks,
+                            image = bitmap
+                        )?.let { bmp ->
+                            imagePreviewCreator.createPreview(
+                                image = bmp,
                                 imageInfo = imageInfo,
-                                transformations = _basicFilterState.value.filters.map {
-                                    filterProvider.filterToTransformation(it)
-                                },
-                                onGetByteCount = { _bitmapSize.value = it.toLong() }
+                                onGetByteCount = { size ->
+                                    _imageInfo.update { it.copy(sizeInBytes = size) }
+                                }
                             )
                         }
-
-                        is Screen.Filter.Type.Masking -> {
-                            _previewBitmap.value = filterMaskApplier.filterByMasks(
-                                filterMasks = _maskingFilterState.value.masks,
-                                image = bitmap
-                            )?.let { bmp ->
-                                imagePreviewCreator.createPreview(
-                                    image = bmp,
-                                    imageInfo = imageInfo,
-                                    onGetByteCount = { _bitmapSize.value = it.toLong() }
-                                )
-                            }
-                        }
-
-                        null -> Unit
                     }
-                    _isImageLoading.value = false
-                    _needToApplyFilters.value = false
+
+                    null -> Unit
                 }
+                _isImageLoading.value = false
             }
         }
     }
@@ -446,7 +438,7 @@ class FilterViewModel @Inject constructor(
         }
         uri?.let { setBitmap(it) }
         _maskingFilterState.value = MaskingFilterState(uri)
-        _needToApplyFilters.value = true
+        updatePreview()
         updateCanSave()
     }
 
@@ -458,54 +450,54 @@ class FilterViewModel @Inject constructor(
         _previewBitmap.value = null
         _imageInfo.update { ImageInfo() }
         updateCanSave()
+        registerChangesCleared()
     }
 
     fun saveMaskedBitmap(
+        oneTimeSaveLocationUri: String?,
         onComplete: (saveResult: SaveResult) -> Unit
     ) {
-        _isSaving.value = false
-        savingJob?.cancel()
-        savingJob = viewModelScope.launch {
-            withContext(defaultDispatcher) {
-                _isSaving.value = true
-                _done.value = 0
-                _left.value = maskingFilterState.masks.size
-                maskingFilterState.uri?.toString()?.let {
-                    imageGetter.getImage(uri = it)
-                }?.let {
-                    maskingFilterState.masks.fold<UiFilterMask, Bitmap?>(
-                        initial = it.image,
-                        operation = { bmp, mask ->
-                            bmp?.let {
-                                filterMaskApplier.filterByMask(
-                                    filterMask = mask, image = bmp
-                                )
-                            }?.also { _done.value++ }
-                        }
-                    )?.let { localBitmap ->
-                        onComplete(
-                            fileController.save(
-                                saveTarget = ImageSaveTarget<ExifInterface>(
+        savingJob = viewModelScope.launch(defaultDispatcher) {
+            _isSaving.value = true
+            _done.value = 0
+            _left.value = maskingFilterState.masks.size
+            maskingFilterState.uri?.toString()?.let {
+                imageGetter.getImage(uri = it)
+            }?.let {
+                maskingFilterState.masks.fold<UiFilterMask, Bitmap?>(
+                    initial = it.image,
+                    operation = { bmp, mask ->
+                        bmp?.let {
+                            filterMaskApplier.filterByMask(
+                                filterMask = mask, image = bmp
+                            )
+                        }?.also { _done.value++ }
+                    }
+                )?.let { localBitmap ->
+                    onComplete(
+                        fileController.save(
+                            saveTarget = ImageSaveTarget<ExifInterface>(
+                                imageInfo = imageInfo.copy(
+                                    width = localBitmap.width,
+                                    height = localBitmap.height
+                                ),
+                                originalUri = maskingFilterState.uri.toString(),
+                                sequenceNumber = null,
+                                data = imageCompressor.compressAndTransform(
+                                    image = localBitmap,
                                     imageInfo = imageInfo.copy(
                                         width = localBitmap.width,
                                         height = localBitmap.height
-                                    ),
-                                    originalUri = maskingFilterState.uri.toString(),
-                                    sequenceNumber = null,
-                                    data = imageCompressor.compressAndTransform(
-                                        image = localBitmap,
-                                        imageInfo = imageInfo.copy(
-                                            width = localBitmap.width,
-                                            height = localBitmap.height
-                                        )
                                     )
-                                ), keepOriginalMetadata = keepExif
-                            )
-                        )
-                    }
+                                )
+                            ),
+                            keepOriginalMetadata = keepExif,
+                            oneTimeSaveLocationUri = oneTimeSaveLocationUri
+                        ).onSuccess(::registerSave)
+                    )
                 }
-                _isSaving.value = false
             }
+            _isSaving.value = false
         }
     }
 
@@ -513,7 +505,7 @@ class FilterViewModel @Inject constructor(
         _maskingFilterState.update {
             it.copy(masks = uiFilterMasks)
         }
-        _needToApplyFilters.value = true
+        updatePreview()
         updateCanSave()
     }
 
@@ -530,9 +522,9 @@ class FilterViewModel @Inject constructor(
                     }
                 )
             }
-            _needToApplyFilters.value = true
+            updatePreview()
             updateCanSave()
-        }.exceptionOrNull()?.let(showError)
+        }.onFailure(showError)
     }
 
     fun removeMaskAtIndex(index: Int) {
@@ -543,7 +535,7 @@ class FilterViewModel @Inject constructor(
                 }
             )
         }
-        _needToApplyFilters.value = true
+        updatePreview()
         updateCanSave()
     }
 
@@ -553,27 +545,11 @@ class FilterViewModel @Inject constructor(
                 masks = it.masks + value
             )
         }
-        _needToApplyFilters.value = true
+        updatePreview()
         updateCanSave()
     }
 
-    suspend fun filter(
-        bitmap: Bitmap,
-        filters: List<UiFilter<*>>,
-        size: IntegerSize
-    ): Bitmap? = imageTransformer.transform(
-        image = bitmap,
-        transformations = filters.map { filterProvider.filterToTransformation(it) },
-        size = size
-    )
-
-    fun filterToTransformation(
-        uiFilter: UiFilter<*>
-    ): Transformation = filterProvider.filterToTransformation(uiFilter).toCoil()
-
     fun cacheCurrentImage(onComplete: (Uri) -> Unit) {
-        _isSaving.value = false
-        savingJob?.cancel()
         savingJob = viewModelScope.launch {
             _isSaving.value = true
             when (filterType) {
@@ -586,8 +562,7 @@ class FilterViewModel @Inject constructor(
                     )?.let { (image, imageInfo) ->
                         shareProvider.cacheImage(
                             image = image,
-                            imageInfo = imageInfo,
-                            name = Random.nextInt().toString()
+                            imageInfo = imageInfo
                         )?.let {
                             onComplete(it.toUri())
                         }
@@ -615,8 +590,7 @@ class FilterViewModel @Inject constructor(
                                 imageInfo = imageInfo.copy(
                                     width = bitmap.width,
                                     height = bitmap.height
-                                ),
-                                name = Random.nextInt().toString()
+                                )
                             )?.let {
                                 onComplete(it.toUri())
                             }
@@ -626,6 +600,71 @@ class FilterViewModel @Inject constructor(
 
                 null -> Unit
             }
+            _isSaving.value = false
+        }
+    }
+
+    fun cacheImages(
+        onComplete: (List<Uri>) -> Unit
+    ) {
+        savingJob = viewModelScope.launch {
+            _isSaving.value = true
+            val list = mutableListOf<Uri>()
+            when (filterType) {
+                is Screen.Filter.Type.Basic -> {
+                    _done.value = 0
+                    _left.value = basicFilterState.uris?.size ?: 0
+                    basicFilterState.uris?.forEach { uri ->
+                        imageGetter.getImageWithTransformations(
+                            uri = uri.toString(),
+                            transformations = _basicFilterState.value.filters.map {
+                                filterProvider.filterToTransformation(it)
+                            }
+                        )?.let { (image, imageInfo) ->
+                            shareProvider.cacheImage(
+                                image = image,
+                                imageInfo = imageInfo
+                            )?.let {
+                                list.add(it.toUri())
+                            }
+                        }
+                        _done.value++
+                    }
+                }
+
+                is Screen.Filter.Type.Masking -> {
+                    _done.value = 0
+                    _left.value = maskingFilterState.masks.size
+                    maskingFilterState.uri?.toString()?.let {
+                        imageGetter.getImage(uri = it)
+                    }?.let { imageData ->
+                        maskingFilterState.masks.fold<UiFilterMask, Bitmap?>(
+                            initial = imageData.image,
+                            operation = { bmp, mask ->
+                                bmp?.let {
+                                    filterMaskApplier.filterByMask(
+                                        filterMask = mask,
+                                        image = bmp
+                                    )
+                                }?.also { _done.value++ }
+                            }
+                        )?.let { bitmap ->
+                            shareProvider.cacheImage(
+                                image = bitmap,
+                                imageInfo = imageInfo.copy(
+                                    width = bitmap.width,
+                                    height = bitmap.height
+                                )
+                            )?.let {
+                                list.add(it.toUri())
+                            }
+                        }
+                    }
+                }
+
+                null -> Unit
+            }
+            onComplete(list)
             _isSaving.value = false
         }
     }

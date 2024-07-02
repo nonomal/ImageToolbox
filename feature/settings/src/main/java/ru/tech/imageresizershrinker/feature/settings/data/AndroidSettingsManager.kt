@@ -22,8 +22,10 @@ import android.content.Context
 import androidx.core.net.toUri
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.PreferencesMapCompat
+import androidx.datastore.preferences.core.MutablePreferences
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit
+import com.t8rin.logger.makeLog
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
@@ -32,12 +34,14 @@ import kotlinx.coroutines.withContext
 import ru.tech.imageresizershrinker.core.domain.dispatchers.DispatchersHolder
 import ru.tech.imageresizershrinker.core.domain.image.model.ImageScaleMode
 import ru.tech.imageresizershrinker.core.domain.image.model.Preset
+import ru.tech.imageresizershrinker.core.domain.model.PerformanceClass
 import ru.tech.imageresizershrinker.core.resources.R
 import ru.tech.imageresizershrinker.core.settings.domain.SettingsManager
 import ru.tech.imageresizershrinker.core.settings.domain.model.ColorHarmonizer
 import ru.tech.imageresizershrinker.core.settings.domain.model.CopyToClipboardMode
 import ru.tech.imageresizershrinker.core.settings.domain.model.DomainFontFamily
 import ru.tech.imageresizershrinker.core.settings.domain.model.NightMode
+import ru.tech.imageresizershrinker.core.settings.domain.model.OneTimeSaveLocation
 import ru.tech.imageresizershrinker.core.settings.domain.model.SettingsState
 import ru.tech.imageresizershrinker.core.settings.domain.model.SwitchType
 import ru.tech.imageresizershrinker.feature.settings.data.SettingKeys.ADD_ORIGINAL_NAME_TO_FILENAME
@@ -53,6 +57,8 @@ import ru.tech.imageresizershrinker.feature.settings.data.SettingKeys.APP_COLOR_
 import ru.tech.imageresizershrinker.feature.settings.data.SettingKeys.APP_OPEN_COUNT
 import ru.tech.imageresizershrinker.feature.settings.data.SettingKeys.AUTO_CACHE_CLEAR
 import ru.tech.imageresizershrinker.feature.settings.data.SettingKeys.BORDER_WIDTH
+import ru.tech.imageresizershrinker.feature.settings.data.SettingKeys.CAN_ENTER_PRESETS_BY_TEXT_FIELD
+import ru.tech.imageresizershrinker.feature.settings.data.SettingKeys.COLOR_BLIND_TYPE
 import ru.tech.imageresizershrinker.feature.settings.data.SettingKeys.COLOR_TUPLES
 import ru.tech.imageresizershrinker.feature.settings.data.SettingKeys.CONFETTI_ENABLED
 import ru.tech.imageresizershrinker.feature.settings.data.SettingKeys.CONFETTI_HARMONIZATION_LEVEL
@@ -60,6 +66,7 @@ import ru.tech.imageresizershrinker.feature.settings.data.SettingKeys.CONFETTI_H
 import ru.tech.imageresizershrinker.feature.settings.data.SettingKeys.CONFETTI_TYPE
 import ru.tech.imageresizershrinker.feature.settings.data.SettingKeys.COPY_TO_CLIPBOARD_MODE
 import ru.tech.imageresizershrinker.feature.settings.data.SettingKeys.DEFAULT_DRAW_LINE_WIDTH
+import ru.tech.imageresizershrinker.feature.settings.data.SettingKeys.DONATE_DIALOG_OPEN_COUNT
 import ru.tech.imageresizershrinker.feature.settings.data.SettingKeys.DRAG_HANDLE_WIDTH
 import ru.tech.imageresizershrinker.feature.settings.data.SettingKeys.DRAW_APPBAR_SHADOWS
 import ru.tech.imageresizershrinker.feature.settings.data.SettingKeys.DRAW_BUTTON_SHADOWS
@@ -84,6 +91,8 @@ import ru.tech.imageresizershrinker.feature.settings.data.SettingKeys.INVERT_THE
 import ru.tech.imageresizershrinker.feature.settings.data.SettingKeys.LOCK_DRAW_ORIENTATION
 import ru.tech.imageresizershrinker.feature.settings.data.SettingKeys.MAGNIFIER_ENABLED
 import ru.tech.imageresizershrinker.feature.settings.data.SettingKeys.NIGHT_MODE
+import ru.tech.imageresizershrinker.feature.settings.data.SettingKeys.ONE_TIME_SAVE_LOCATIONS
+import ru.tech.imageresizershrinker.feature.settings.data.SettingKeys.OPEN_EDIT_INSTEAD_OF_PREVIEW
 import ru.tech.imageresizershrinker.feature.settings.data.SettingKeys.OVERWRITE_FILE
 import ru.tech.imageresizershrinker.feature.settings.data.SettingKeys.PRESETS
 import ru.tech.imageresizershrinker.feature.settings.data.SettingKeys.RANDOMIZE_FILENAME
@@ -220,21 +229,44 @@ internal class AndroidSettingsManager @Inject constructor(
                 SwitchType.fromInt(it)
             } ?: default.switchType,
             defaultDrawLineWidth = prefs[DEFAULT_DRAW_LINE_WIDTH]
-                ?: default.defaultDrawLineWidth
+                ?: default.defaultDrawLineWidth,
+            oneTimeSaveLocations = prefs[ONE_TIME_SAVE_LOCATIONS]?.split(", ")
+                ?.mapNotNull { string ->
+                    OneTimeSaveLocation.fromString(string)?.takeIf {
+                        it.uri.isNotEmpty() && it.date != null
+                    }
+                }
+                ?.sortedWith(compareBy(OneTimeSaveLocation::count, OneTimeSaveLocation::date))
+                ?.reversed()
+                ?: default.oneTimeSaveLocations,
+            openEditInsteadOfPreview = prefs[OPEN_EDIT_INSTEAD_OF_PREVIEW]
+                ?: default.openEditInsteadOfPreview,
+            canEnterPresetsByTextField = prefs[CAN_ENTER_PRESETS_BY_TEXT_FIELD]
+                ?: default.canEnterPresetsByTextField,
+            donateDialogOpenCount = prefs[DONATE_DIALOG_OPEN_COUNT]
+                ?: default.donateDialogOpenCount,
+            colorBlindType = prefs[COLOR_BLIND_TYPE]?.let {
+                if (it < 0) null
+                else it
+            } ?: default.colorBlindType
         )
     }
 
     override suspend fun toggleAddSequenceNumber() {
         dataStore.edit {
-            val v = it[ADD_SEQ_NUM_TO_FILENAME] ?: default.addSequenceNumber
-            it[ADD_SEQ_NUM_TO_FILENAME] = !v
+            it.toggle(
+                key = ADD_SEQ_NUM_TO_FILENAME,
+                defaultValue = default.addSequenceNumber
+            )
         }
     }
 
     override suspend fun toggleAddOriginalFilename() {
         dataStore.edit {
-            val v = it[ADD_ORIGINAL_NAME_TO_FILENAME] ?: default.addOriginalFilename
-            it[ADD_ORIGINAL_NAME_TO_FILENAME] = !v
+            it.toggle(
+                key = ADD_ORIGINAL_NAME_TO_FILENAME,
+                defaultValue = default.addOriginalFilename
+            )
         }
     }
 
@@ -252,8 +284,10 @@ internal class AndroidSettingsManager @Inject constructor(
 
     override suspend fun toggleAddFileSize() {
         dataStore.edit {
-            val v = it[ADD_SIZE_TO_FILENAME] ?: default.addSizeInFilename
-            it[ADD_SIZE_TO_FILENAME] = !v
+            it.toggle(
+                key = ADD_SIZE_TO_FILENAME,
+                defaultValue = default.addSizeInFilename
+            )
         }
     }
 
@@ -269,10 +303,12 @@ internal class AndroidSettingsManager @Inject constructor(
         }
     }
 
-    override suspend fun toggleShowDialog() {
+    override suspend fun toggleShowUpdateDialogOnStartup() {
         dataStore.edit {
-            val v = it[SHOW_UPDATE_DIALOG] ?: default.showUpdateDialogOnStartup
-            it[SHOW_UPDATE_DIALOG] = !v
+            it.toggle(
+                key = SHOW_UPDATE_DIALOG,
+                defaultValue = default.showUpdateDialogOnStartup
+            )
         }
     }
 
@@ -295,8 +331,10 @@ internal class AndroidSettingsManager @Inject constructor(
 
     override suspend fun toggleDynamicColors() {
         dataStore.edit {
-            val v = it[DYNAMIC_COLORS] ?: default.isDynamicColors
-            it[DYNAMIC_COLORS] = !v
+            it.toggle(
+                key = DYNAMIC_COLORS,
+                defaultValue = default.isDynamicColors
+            )
         }
     }
 
@@ -308,15 +346,19 @@ internal class AndroidSettingsManager @Inject constructor(
 
     override suspend fun toggleAllowImageMonet() {
         dataStore.edit {
-            val v = it[ALLOW_IMAGE_MONET] ?: default.allowChangeColorByImage
-            it[ALLOW_IMAGE_MONET] = !v
+            it.toggle(
+                key = ALLOW_IMAGE_MONET,
+                defaultValue = default.allowChangeColorByImage
+            )
         }
     }
 
     override suspend fun toggleAmoledMode() {
         dataStore.edit {
-            val v = it[AMOLED_MODE] ?: default.isAmoledMode
-            it[AMOLED_MODE] = !v
+            it.toggle(
+                key = AMOLED_MODE,
+                defaultValue = default.isAmoledMode
+            )
         }
     }
 
@@ -352,22 +394,28 @@ internal class AndroidSettingsManager @Inject constructor(
 
     override suspend fun toggleClearCacheOnLaunch() {
         dataStore.edit {
-            val v = it[AUTO_CACHE_CLEAR] ?: default.clearCacheOnLaunch
-            it[AUTO_CACHE_CLEAR] = !v
+            it.toggle(
+                key = AUTO_CACHE_CLEAR,
+                defaultValue = default.clearCacheOnLaunch
+            )
         }
     }
 
     override suspend fun toggleGroupOptionsByTypes() {
         dataStore.edit {
-            val v = it[GROUP_OPTIONS_BY_TYPE] ?: default.groupOptionsByTypes
-            it[GROUP_OPTIONS_BY_TYPE] = !v
+            it.toggle(
+                key = GROUP_OPTIONS_BY_TYPE,
+                defaultValue = default.groupOptionsByTypes
+            )
         }
     }
 
     override suspend fun toggleRandomizeFilename() {
         dataStore.edit {
-            val v = it[RANDOMIZE_FILENAME] ?: default.randomizeFilename
-            it[RANDOMIZE_FILENAME] = !v
+            it.toggle(
+                key = RANDOMIZE_FILENAME,
+                defaultValue = default.randomizeFilename
+            )
         }
     }
 
@@ -398,10 +446,10 @@ internal class AndroidSettingsManager @Inject constructor(
                     ByteArrayInputStream(byteArrayOutputStream.toByteArray()).copyTo(it)
                 }
             }
-        }.exceptionOrNull()?.let(onFailure) ?: suspend {
+        }.onFailure(onFailure).onSuccess {
             onSuccess()
             setSaveFolderUri(null)
-        }.invoke()
+        }
         toggleClearCacheOnLaunch()
         toggleClearCacheOnLaunch()
     }
@@ -440,57 +488,73 @@ internal class AndroidSettingsManager @Inject constructor(
 
     override suspend fun toggleAllowCrashlytics() {
         dataStore.edit {
-            val v = it[ALLOW_CRASHLYTICS] ?: default.allowCollectCrashlytics
-            it[ALLOW_CRASHLYTICS] = !v
+            it.toggle(
+                key = ALLOW_CRASHLYTICS,
+                defaultValue = default.allowCollectCrashlytics
+            )
         }
     }
 
     override suspend fun toggleAllowAnalytics() {
         dataStore.edit {
-            val v = it[ALLOW_ANALYTICS] ?: default.allowCollectAnalytics
-            it[ALLOW_ANALYTICS] = !v
+            it.toggle(
+                key = ALLOW_ANALYTICS,
+                defaultValue = default.allowCollectAnalytics
+            )
         }
     }
 
     override suspend fun toggleAllowBetas() {
         dataStore.edit {
-            val v = it[ALLOW_BETAS] ?: default.allowBetas
-            it[ALLOW_BETAS] = !v
+            it.toggle(
+                key = ALLOW_BETAS,
+                defaultValue = default.allowBetas
+            )
         }
     }
 
     override suspend fun toggleDrawContainerShadows() {
         dataStore.edit {
-            val v = it[DRAW_CONTAINER_SHADOWS] ?: default.drawContainerShadows
-            it[DRAW_CONTAINER_SHADOWS] = !v
+            it.toggle(
+                key = DRAW_CONTAINER_SHADOWS,
+                defaultValue = default.drawContainerShadows
+            )
         }
     }
 
     override suspend fun toggleDrawButtonShadows() {
         dataStore.edit {
-            val v = it[DRAW_BUTTON_SHADOWS] ?: default.drawButtonShadows
-            it[DRAW_BUTTON_SHADOWS] = !v
+            it.toggle(
+                key = DRAW_BUTTON_SHADOWS,
+                defaultValue = default.drawButtonShadows
+            )
         }
     }
 
     override suspend fun toggleDrawSliderShadows() {
         dataStore.edit {
-            val v = it[DRAW_SLIDER_SHADOWS] ?: default.drawSliderShadows
-            it[DRAW_SLIDER_SHADOWS] = !v
+            it.toggle(
+                key = DRAW_SLIDER_SHADOWS,
+                defaultValue = default.drawSliderShadows
+            )
         }
     }
 
     override suspend fun toggleDrawSwitchShadows() {
         dataStore.edit {
-            val v = it[DRAW_SWITCH_SHADOWS] ?: default.drawSwitchShadows
-            it[DRAW_SWITCH_SHADOWS] = !v
+            it.toggle(
+                key = DRAW_SWITCH_SHADOWS,
+                defaultValue = default.drawSwitchShadows
+            )
         }
     }
 
     override suspend fun toggleDrawFabShadows() {
         dataStore.edit {
-            val v = it[DRAW_FAB_SHADOWS] ?: default.drawFabShadows
-            it[DRAW_FAB_SHADOWS] = !v
+            it.toggle(
+                key = DRAW_FAB_SHADOWS,
+                defaultValue = default.drawFabShadows
+            )
         }
     }
 
@@ -503,8 +567,10 @@ internal class AndroidSettingsManager @Inject constructor(
 
     override suspend fun toggleLockDrawOrientation() {
         dataStore.edit {
-            val v = it[LOCK_DRAW_ORIENTATION] ?: default.lockDrawOrientation
-            it[LOCK_DRAW_ORIENTATION] = !v
+            it.toggle(
+                key = LOCK_DRAW_ORIENTATION,
+                defaultValue = default.lockDrawOrientation
+            )
         }
     }
 
@@ -522,22 +588,28 @@ internal class AndroidSettingsManager @Inject constructor(
 
     override suspend fun toggleInvertColors() {
         dataStore.edit {
-            val v = it[INVERT_THEME] ?: default.isInvertThemeColors
-            it[INVERT_THEME] = !v
+            it.toggle(
+                key = INVERT_THEME,
+                defaultValue = default.isInvertThemeColors
+            )
         }
     }
 
     override suspend fun toggleScreensSearchEnabled() {
         dataStore.edit {
-            val v = it[SCREEN_SEARCH_ENABLED] ?: default.screensSearchEnabled
-            it[SCREEN_SEARCH_ENABLED] = !v
+            it.toggle(
+                key = SCREEN_SEARCH_ENABLED,
+                defaultValue = default.screensSearchEnabled
+            )
         }
     }
 
     override suspend fun toggleDrawAppBarShadows() {
         dataStore.edit {
-            val v = it[DRAW_APPBAR_SHADOWS] ?: default.drawAppBarShadows
-            it[DRAW_APPBAR_SHADOWS] = !v
+            it.toggle(
+                key = DRAW_APPBAR_SHADOWS,
+                defaultValue = default.drawAppBarShadows
+            )
         }
     }
 
@@ -555,8 +627,10 @@ internal class AndroidSettingsManager @Inject constructor(
 
     override suspend fun toggleOverwriteFiles() {
         dataStore.edit {
-            val v = it[OVERWRITE_FILE] ?: default.overwriteFiles
-            it[OVERWRITE_FILE] = !v
+            it.toggle(
+                key = OVERWRITE_FILE,
+                defaultValue = default.overwriteFiles
+            )
 
             it[IMAGE_PICKER_MODE] = 2
         }
@@ -576,15 +650,19 @@ internal class AndroidSettingsManager @Inject constructor(
 
     override suspend fun toggleMagnifierEnabled() {
         dataStore.edit {
-            val v = it[MAGNIFIER_ENABLED] ?: default.magnifierEnabled
-            it[MAGNIFIER_ENABLED] = !v
+            it.toggle(
+                key = MAGNIFIER_ENABLED,
+                defaultValue = default.magnifierEnabled
+            )
         }
     }
 
     override suspend fun toggleExifWidgetInitialState() {
         dataStore.edit {
-            val v = it[EXIF_WIDGET_INITIAL_STATE] ?: default.exifWidgetInitialState
-            it[EXIF_WIDGET_INITIAL_STATE] = !v
+            it.toggle(
+                key = EXIF_WIDGET_INITIAL_STATE,
+                defaultValue = default.exifWidgetInitialState
+            )
         }
     }
 
@@ -608,22 +686,28 @@ internal class AndroidSettingsManager @Inject constructor(
 
     override suspend fun toggleConfettiEnabled() {
         dataStore.edit {
-            val v = it[CONFETTI_ENABLED] ?: default.isConfettiEnabled
-            it[CONFETTI_ENABLED] = !v
+            it.toggle(
+                key = CONFETTI_ENABLED,
+                defaultValue = default.isConfettiEnabled
+            )
         }
     }
 
     override suspend fun toggleSecureMode() {
         dataStore.edit {
-            val v = it[SECURE_MODE] ?: default.isSecureMode
-            it[SECURE_MODE] = !v
+            it.toggle(
+                key = SECURE_MODE,
+                defaultValue = default.isSecureMode
+            )
         }
     }
 
     override suspend fun toggleUseRandomEmojis() {
         dataStore.edit {
-            val v = it[USE_RANDOM_EMOJIS] ?: default.useRandomEmojis
-            it[USE_RANDOM_EMOJIS] = !v
+            it.toggle(
+                key = USE_RANDOM_EMOJIS,
+                defaultValue = default.useRandomEmojis
+            )
         }
     }
 
@@ -635,8 +719,10 @@ internal class AndroidSettingsManager @Inject constructor(
 
     override suspend fun toggleUseEmojiAsPrimaryColor() {
         dataStore.edit {
-            val v = it[USE_EMOJI_AS_PRIMARY_COLOR] ?: default.useEmojiAsPrimaryColor
-            it[USE_EMOJI_AS_PRIMARY_COLOR] = !v
+            it.toggle(
+                key = USE_EMOJI_AS_PRIMARY_COLOR,
+                defaultValue = default.useEmojiAsPrimaryColor
+            )
         }
     }
 
@@ -654,8 +740,10 @@ internal class AndroidSettingsManager @Inject constructor(
 
     override suspend fun toggleAllowAutoClipboardPaste() {
         dataStore.edit {
-            val v = it[ALLOW_AUTO_PASTE] ?: default.allowAutoClipboardPaste
-            it[ALLOW_AUTO_PASTE] = !v
+            it.toggle(
+                key = ALLOW_AUTO_PASTE,
+                defaultValue = default.allowAutoClipboardPaste
+            )
         }
     }
 
@@ -673,29 +761,37 @@ internal class AndroidSettingsManager @Inject constructor(
 
     override suspend fun toggleGeneratePreviews() {
         dataStore.edit {
-            val v = it[GENERATE_PREVIEWS] ?: default.generatePreviews
-            it[GENERATE_PREVIEWS] = !v
+            it.toggle(
+                key = GENERATE_PREVIEWS,
+                defaultValue = default.generatePreviews
+            )
         }
     }
 
     override suspend fun toggleSkipImagePicking() {
         dataStore.edit {
-            val v = it[SKIP_IMAGE_PICKING] ?: default.skipImagePicking
-            it[SKIP_IMAGE_PICKING] = !v
+            it.toggle(
+                key = SKIP_IMAGE_PICKING,
+                defaultValue = default.skipImagePicking
+            )
         }
     }
 
     override suspend fun toggleShowSettingsInLandscape() {
         dataStore.edit {
-            val v = it[SHOW_SETTINGS_IN_LANDSCAPE] ?: default.showSettingsInLandscape
-            it[SHOW_SETTINGS_IN_LANDSCAPE] = !v
+            it.toggle(
+                key = SHOW_SETTINGS_IN_LANDSCAPE,
+                defaultValue = default.showSettingsInLandscape
+            )
         }
     }
 
     override suspend fun toggleUseFullscreenSettings() {
         dataStore.edit {
-            val v = it[USE_FULLSCREEN_SETTINGS] ?: default.useFullscreenSettings
-            it[USE_FULLSCREEN_SETTINGS] = !v
+            it.toggle(
+                key = USE_FULLSCREEN_SETTINGS,
+                defaultValue = default.useFullscreenSettings
+            )
         }
     }
 
@@ -709,6 +805,99 @@ internal class AndroidSettingsManager @Inject constructor(
         dataStore.edit {
             it[DEFAULT_DRAW_LINE_WIDTH] = value
         }
+    }
+
+    override suspend fun setOneTimeSaveLocations(value: List<OneTimeSaveLocation>) {
+        dataStore.edit { preferences ->
+            preferences[ONE_TIME_SAVE_LOCATIONS] = value.filter {
+                it.uri.isNotEmpty() && it.date != null
+            }.distinctBy { it.uri }.joinToString(", ")
+        }
+    }
+
+    override suspend fun toggleOpenEditInsteadOfPreview() {
+        dataStore.edit {
+            it.toggle(
+                key = OPEN_EDIT_INSTEAD_OF_PREVIEW,
+                defaultValue = default.openEditInsteadOfPreview
+            )
+        }
+    }
+
+    override suspend fun toggleCanEnterPresetsByTextField() {
+        dataStore.edit {
+            it.toggle(
+                key = CAN_ENTER_PRESETS_BY_TEXT_FIELD,
+                defaultValue = default.canEnterPresetsByTextField
+            )
+        }
+    }
+
+    override suspend fun adjustPerformance(performanceClass: PerformanceClass) {
+        when (performanceClass.makeLog("PerformanceClass")) {
+            PerformanceClass.Low -> {
+                dataStore.edit {
+                    it[CONFETTI_ENABLED] = false
+                    it[DRAW_BUTTON_SHADOWS] = false
+                    it[DRAW_SWITCH_SHADOWS] = false
+                    it[DRAW_SLIDER_SHADOWS] = false
+                    it[DRAW_CONTAINER_SHADOWS] = false
+                    it[DRAW_APPBAR_SHADOWS] = false
+                }
+            }
+
+            PerformanceClass.Average -> {
+                dataStore.edit {
+                    it[CONFETTI_ENABLED] = true
+                    it[DRAW_BUTTON_SHADOWS] = false
+                    it[DRAW_SWITCH_SHADOWS] = true
+                    it[DRAW_SLIDER_SHADOWS] = false
+                    it[DRAW_CONTAINER_SHADOWS] = false
+                    it[DRAW_APPBAR_SHADOWS] = true
+                }
+            }
+
+            PerformanceClass.High -> {
+                dataStore.edit {
+                    it[CONFETTI_ENABLED] = true
+                    it[DRAW_BUTTON_SHADOWS] = true
+                    it[DRAW_SWITCH_SHADOWS] = true
+                    it[DRAW_SLIDER_SHADOWS] = true
+                    it[DRAW_CONTAINER_SHADOWS] = true
+                    it[DRAW_APPBAR_SHADOWS] = true
+                }
+            }
+        }
+    }
+
+    override suspend fun registerDonateDialogOpen() {
+        dataStore.edit {
+            val value = it[DONATE_DIALOG_OPEN_COUNT] ?: default.donateDialogOpenCount
+
+            if (value != -1) {
+                it[DONATE_DIALOG_OPEN_COUNT] = value + 1
+            }
+        }
+    }
+
+    override suspend fun setNotShowDonateDialogAgain() {
+        dataStore.edit {
+            it[DONATE_DIALOG_OPEN_COUNT] = -1
+        }
+    }
+
+    override suspend fun setColorBlindType(value: Int?) {
+        dataStore.edit {
+            it[COLOR_BLIND_TYPE] = value ?: -1
+        }
+    }
+
+    private fun MutablePreferences.toggle(
+        key: Preferences.Key<Boolean>,
+        defaultValue: Boolean
+    ) {
+        val value = this[key] ?: defaultValue
+        this[key] = !value
     }
 
 }

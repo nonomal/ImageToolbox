@@ -69,8 +69,8 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
 import ru.tech.imageresizershrinker.core.resources.R
-import ru.tech.imageresizershrinker.core.settings.presentation.provider.LocalSettingsInteractor
 import ru.tech.imageresizershrinker.core.settings.presentation.provider.LocalSettingsState
+import ru.tech.imageresizershrinker.core.settings.presentation.provider.LocalSimpleSettingInteractor
 import ru.tech.imageresizershrinker.core.ui.theme.outlineVariant
 import ru.tech.imageresizershrinker.core.ui.utils.confetti.LocalConfettiHostState
 import ru.tech.imageresizershrinker.core.ui.widget.buttons.EnhancedIconButton
@@ -83,7 +83,7 @@ import ru.tech.imageresizershrinker.core.ui.widget.other.Loading
 import ru.tech.imageresizershrinker.core.ui.widget.other.LocalToastHostState
 import ru.tech.imageresizershrinker.core.ui.widget.other.showError
 import ru.tech.imageresizershrinker.core.ui.widget.preferences.PreferenceRowSwitch
-import ru.tech.imageresizershrinker.core.ui.widget.text.Marquee
+import ru.tech.imageresizershrinker.core.ui.widget.text.marquee
 import ru.tech.imageresizershrinker.feature.draw.domain.pt
 import ru.tech.imageresizershrinker.feature.draw.presentation.components.BrushSoftnessSelector
 import ru.tech.imageresizershrinker.feature.draw.presentation.components.LineWidthSelector
@@ -281,16 +281,16 @@ fun EraseBackgroundEditOption(
                         start = 16.dp,
                         end = 16.dp,
                         top = 8.dp,
-                        bottom = 16.dp
                     )
                 )
-                val settingsInteractor = LocalSettingsInteractor.current
+                val settingsInteractor = LocalSimpleSettingInteractor.current
                 PreferenceRowSwitch(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(
                             start = 16.dp,
                             end = 16.dp,
+                            top = 8.dp,
                             bottom = 16.dp
                         ),
                     shape = RoundedCornerShape(24.dp),
@@ -344,11 +344,10 @@ fun EraseBackgroundEditOption(
                         }
                     },
                     title = {
-                        Marquee {
-                            Text(
-                                text = stringResource(R.string.erase_background),
-                            )
-                        }
+                        Text(
+                            text = stringResource(R.string.erase_background),
+                            modifier = Modifier.marquee()
+                        )
                     }
                 )
             }

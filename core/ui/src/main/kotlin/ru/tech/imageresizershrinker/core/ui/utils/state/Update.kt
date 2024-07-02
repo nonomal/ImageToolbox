@@ -19,8 +19,22 @@ package ru.tech.imageresizershrinker.core.ui.utils.state
 
 import androidx.compose.runtime.MutableState
 
-fun <T> MutableState<T>.update(
+inline fun <T> MutableState<T>.update(
+    transform: (T) -> T
+): T = run {
+    transform(this.value).also { this.value = it }
+}
+
+inline fun <T> MutableState<T>.updateIf(
+    predicate: (T) -> Boolean,
     transform: (T) -> T
 ): MutableState<T> = apply {
-    this.value = transform(this.value)
+    if (predicate(this.value)) {
+        this.value = transform(this.value)
+    }
 }
+
+//fun <T> T.asFun(): Function1<T, T> {
+//    val value = this
+//    return { value }
+//}

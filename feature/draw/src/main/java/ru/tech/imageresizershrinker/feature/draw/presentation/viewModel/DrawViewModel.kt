@@ -30,10 +30,7 @@ import androidx.core.net.toUri
 import androidx.exifinterface.media.ExifInterface
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
-import dev.olshevski.navigation.reimagined.navController
-import dev.olshevski.navigation.reimagined.navigate
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import ru.tech.imageresizershrinker.core.domain.dispatchers.DispatchersHolder
 import ru.tech.imageresizershrinker.core.domain.image.ImageCompressor
@@ -46,6 +43,7 @@ import ru.tech.imageresizershrinker.core.domain.image.model.ImageInfo
 import ru.tech.imageresizershrinker.core.domain.saving.FileController
 import ru.tech.imageresizershrinker.core.domain.saving.model.ImageSaveTarget
 import ru.tech.imageresizershrinker.core.domain.saving.model.SaveResult
+import ru.tech.imageresizershrinker.core.domain.utils.smartJob
 import ru.tech.imageresizershrinker.core.filters.domain.FilterProvider
 import ru.tech.imageresizershrinker.core.filters.presentation.model.UiFilter
 import ru.tech.imageresizershrinker.core.ui.utils.BaseViewModel
@@ -54,7 +52,6 @@ import ru.tech.imageresizershrinker.feature.draw.domain.DrawBehavior
 import ru.tech.imageresizershrinker.feature.draw.domain.ImageDrawApplier
 import ru.tech.imageresizershrinker.feature.draw.presentation.components.UiPathPaint
 import javax.inject.Inject
-import kotlin.random.Random
 
 @HiltViewModel
 class DrawViewModel @Inject constructor(
@@ -78,9 +75,8 @@ class DrawViewModel @Inject constructor(
     private val _colorPickerBitmap: MutableState<Bitmap?> = mutableStateOf(null)
     val colorPickerBitmap by _colorPickerBitmap
 
-    private val navController = navController<DrawBehavior>(DrawBehavior.None)
-
-    val drawBehavior get() = navController.backstack.entries.last().destination
+    private val _drawBehavior: MutableState<DrawBehavior> = mutableStateOf(DrawBehavior.None)
+    val drawBehavior: DrawBehavior by _drawBehavior
 
     private val _uri = mutableStateOf(Uri.EMPTY)
     val uri: Uri by _uri
@@ -94,7 +90,7 @@ class DrawViewModel @Inject constructor(
     private val _undonePaths = mutableStateOf(listOf<UiPathPaint>())
     val undonePaths: List<UiPathPaint> by _undonePaths
 
-    val isBitmapChanged: Boolean
+    val havePaths: Boolean
         get() = paths.isNotEmpty() || lastPaths.isNotEmpty() || undonePaths.isNotEmpty()
 
     private val _imageFormat = mutableStateOf(ImageFormat.Default())
@@ -106,16 +102,15 @@ class DrawViewModel @Inject constructor(
     private val _saveExif: MutableState<Boolean> = mutableStateOf(false)
     val saveExif: Boolean by _saveExif
 
-    fun updateMimeType(imageFormat: ImageFormat) {
-        _imageFormat.value = imageFormat
+    private var savingJob: Job? by smartJob {
+        _isSaving.update { false }
     }
 
-    private var savingJob: Job? = null
-
     fun saveBitmap(
+        oneTimeSaveLocationUri: String?,
         onComplete: (saveResult: SaveResult) -> Unit
-    ) = viewModelScope.launch {
-        withContext(defaultDispatcher) {
+    ) {
+        savingJob = viewModelScope.launch(defaultDispatcher) {
             _isSaving.value = true
             getDrawingBitmap()?.let { localBitmap ->
                 onComplete(
@@ -136,16 +131,14 @@ class DrawViewModel @Inject constructor(
                                     height = localBitmap.height
                                 )
                             )
-                        ), keepOriginalMetadata = _saveExif.value
-                    )
+                        ),
+                        keepOriginalMetadata = _saveExif.value,
+                        oneTimeSaveLocationUri = oneTimeSaveLocationUri
+                    ).onSuccess(::registerSave)
                 )
             }
             _isSaving.value = false
         }
-    }.also {
-        _isSaving.value = false
-        savingJob?.cancel()
-        savingJob = it
     }
 
     private suspend fun calculateScreenOrientationBasedOnUri(uri: Uri): Int {
@@ -158,11 +151,17 @@ class DrawViewModel @Inject constructor(
         }
     }
 
-    fun setSaveExif(bool: Boolean) {
-        _saveExif.value = bool
+    fun setImageFormat(imageFormat: ImageFormat) {
+        _imageFormat.value = imageFormat
+        registerChanges()
     }
 
-    fun updateBitmap(bitmap: Bitmap?) {
+    fun setSaveExif(bool: Boolean) {
+        _saveExif.value = bool
+        registerChanges()
+    }
+
+    private fun updateBitmap(bitmap: Bitmap?) {
         viewModelScope.launch {
             _isImageLoading.value = true
             _bitmap.value = imageScaler.scaleUntilCanShow(bitmap)
@@ -170,41 +169,31 @@ class DrawViewModel @Inject constructor(
         }
     }
 
-    fun decodeBitmapByUri(
+    fun setUri(
         uri: Uri,
-        originalSize: Boolean = true,
-        onGetMimeType: (ImageFormat) -> Unit,
-        onGetExif: (ExifInterface?) -> Unit,
-        onGetBitmap: (Bitmap) -> Unit,
         onError: (Throwable) -> Unit
     ) {
-        _isImageLoading.value = true
-        imageGetter.getImageAsync(
-            uri = uri.toString(),
-            originalSize = originalSize,
-            onGetImage = {
-                onGetBitmap(it.image)
-                onGetExif(it.metadata)
-                onGetMimeType(it.imageInfo.imageFormat)
-            },
-            onError = onError
-        )
-    }
-
-    fun setUri(uri: Uri) {
         viewModelScope.launch {
             _paths.value = listOf()
             _lastPaths.value = listOf()
             _undonePaths.value = listOf()
+            _isImageLoading.value = true
+
             _uri.value = uri
             if (drawBehavior !is DrawBehavior.Image) {
-                navController.navigate(
+                _drawBehavior.update {
                     DrawBehavior.Image(calculateScreenOrientationBasedOnUri(uri))
-                )
+                }
             }
-            imageGetter.getImage(uri = uri.toString())?.imageInfo?.imageFormat?.let {
-                updateMimeType(it)
-            }
+            imageGetter.getImageAsync(
+                uri = uri.toString(),
+                originalSize = true,
+                onGetImage = { data ->
+                    updateBitmap(data.image)
+                    _imageFormat.update { data.imageInfo.imageFormat }
+                },
+                onError = onError
+            )
         }
     }
 
@@ -230,9 +219,12 @@ class DrawViewModel @Inject constructor(
         _lastPaths.value = listOf()
         _undonePaths.value = listOf()
         _bitmap.value = null
-        navController.navigate(DrawBehavior.None)
+        _drawBehavior.update {
+            DrawBehavior.None
+        }
         _uri.value = Uri.EMPTY
         _backgroundColor.value = Color.Transparent
+        registerChangesCleared()
     }
 
     fun startDrawOnBackground(
@@ -243,7 +235,7 @@ class DrawViewModel @Inject constructor(
         val width = reqWidth.takeIf { it > 0 } ?: 1
         val height = reqHeight.takeIf { it > 0 } ?: 1
         val imageRatio = width / height.toFloat()
-        navController.navigate(
+        _drawBehavior.update {
             DrawBehavior.Background(
                 orientation = if (imageRatio <= 1f) {
                     ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
@@ -254,14 +246,13 @@ class DrawViewModel @Inject constructor(
                 height = height,
                 color = color.toArgb()
             )
-        )
+        }
         _backgroundColor.value = color
     }
 
     fun shareBitmap(onComplete: () -> Unit) {
-        savingJob?.cancel()
-        _isSaving.value = true
         savingJob = viewModelScope.launch {
+            _isSaving.value = true
             getDrawingBitmap()?.let {
                 shareProvider.shareImage(
                     image = it,
@@ -279,6 +270,7 @@ class DrawViewModel @Inject constructor(
 
     fun updateBackgroundColor(color: Color) {
         _backgroundColor.value = color
+        registerChanges()
     }
 
     fun clearDrawing() {
@@ -286,6 +278,7 @@ class DrawViewModel @Inject constructor(
             _lastPaths.value = paths
             _paths.value = listOf()
             _undonePaths.value = listOf()
+            registerChanges()
         }
     }
 
@@ -301,6 +294,7 @@ class DrawViewModel @Inject constructor(
 
         _paths.update { it - lastPath }
         _undonePaths.update { it + lastPath }
+        registerChanges()
     }
 
     fun redo() {
@@ -309,11 +303,13 @@ class DrawViewModel @Inject constructor(
         val lastPath = undonePaths.last()
         _paths.update { it + lastPath }
         _undonePaths.update { it - lastPath }
+        registerChanges()
     }
 
     fun addPath(pathPaint: UiPathPaint) {
         _paths.update { it + pathPaint }
         _undonePaths.value = listOf()
+        registerChanges()
     }
 
     fun cancelSaving() {
@@ -331,8 +327,6 @@ class DrawViewModel @Inject constructor(
     )
 
     fun cacheCurrentImage(onComplete: (Uri) -> Unit) {
-        _isSaving.value = false
-        savingJob?.cancel()
         savingJob = viewModelScope.launch {
             _isSaving.value = true
             getDrawingBitmap()?.let { image ->
@@ -342,8 +336,7 @@ class DrawViewModel @Inject constructor(
                         imageFormat = imageFormat,
                         width = image.width,
                         height = image.height
-                    ),
-                    name = Random.nextInt().toString()
+                    )
                 )?.let { uri ->
                     onComplete(uri.toUri())
                 }

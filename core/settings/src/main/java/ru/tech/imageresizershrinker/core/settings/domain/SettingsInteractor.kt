@@ -18,13 +18,14 @@
 package ru.tech.imageresizershrinker.core.settings.domain
 
 import ru.tech.imageresizershrinker.core.domain.image.model.ImageScaleMode
+import ru.tech.imageresizershrinker.core.domain.model.PerformanceClass
 import ru.tech.imageresizershrinker.core.settings.domain.model.ColorHarmonizer
 import ru.tech.imageresizershrinker.core.settings.domain.model.CopyToClipboardMode
 import ru.tech.imageresizershrinker.core.settings.domain.model.DomainFontFamily
 import ru.tech.imageresizershrinker.core.settings.domain.model.NightMode
 import ru.tech.imageresizershrinker.core.settings.domain.model.SwitchType
 
-interface SettingsInteractor {
+interface SettingsInteractor : SimpleSettingInteractor {
 
     suspend fun toggleAddSequenceNumber()
 
@@ -40,7 +41,7 @@ interface SettingsInteractor {
 
     suspend fun setFilenamePrefix(name: String)
 
-    suspend fun toggleShowDialog()
+    suspend fun toggleShowUpdateDialogOnStartup()
 
     suspend fun setColorTuple(colorTuple: String)
 
@@ -126,8 +127,6 @@ interface SettingsInteractor {
 
     suspend fun setDefaultImageScaleMode(imageScaleMode: ImageScaleMode)
 
-    suspend fun toggleMagnifierEnabled()
-
     suspend fun toggleExifWidgetInitialState()
 
     suspend fun setInitialOCRLanguageCodes(list: List<String>)
@@ -167,5 +166,17 @@ interface SettingsInteractor {
     suspend fun setSwitchType(type: SwitchType)
 
     suspend fun setDefaultDrawLineWidth(value: Float)
+
+    suspend fun toggleOpenEditInsteadOfPreview()
+
+    suspend fun toggleCanEnterPresetsByTextField()
+
+    suspend fun adjustPerformance(performanceClass: PerformanceClass)
+
+    suspend fun registerDonateDialogOpen()
+
+    suspend fun setNotShowDonateDialogAgain()
+
+    suspend fun setColorBlindType(value: Int?)
 
 }

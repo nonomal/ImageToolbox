@@ -24,10 +24,13 @@ plugins {
 android.namespace = "ru.tech.imageresizershrinker.core.ui"
 
 dependencies {
+    api(projects.core.resources)
+    api(projects.core.domain)
+    implementation(projects.core.settings)
+
+    // Navigation
     api(libs.reimagined)
     api(libs.reimagined.hilt)
-
-    api(libs.androidx.documentfile)
 
     //AndroidX
     api(libs.activityCompose)
@@ -35,6 +38,7 @@ dependencies {
     api(libs.androidx.exifinterface)
     api(libs.appCompat)
     api(libs.androidx.lifecycle.viewmodel.compose)
+    api(libs.androidx.documentfile)
 
     //Konfetti
     api(libs.konfetti.compose)
@@ -47,7 +51,6 @@ dependencies {
 
     //Modules
     api(libs.imageToolboxLibs)
-    api(projects.core.domain)
 
     api(libs.reorderable)
 
@@ -60,16 +63,20 @@ dependencies {
     api(libs.scrollbar)
 
     implementation(libs.datastore.preferences.android)
-    implementation(libs.material)
+    api(libs.material)
 
-    "marketImplementation"(libs.mlkit.segmentation.selfie)
     "marketImplementation"(libs.firebase.crashlytics.ktx)
     "marketImplementation"(libs.firebase.analytics.ktx)
     "marketImplementation"(libs.review.ktx)
     "marketImplementation"(libs.app.update)
     "marketImplementation"(libs.app.update.ktx)
 
-    api(projects.core.resources)
+    "marketImplementation"(libs.mlkit.document.scanner)
+    "fossImplementation"(libs.documentscanner)
 
-    implementation(projects.core.settings)
+    "marketImplementation"(libs.quickie.bundled)
+    "fossImplementation"(libs.quickie.foss)
+    api(libs.zxing.android.embedded)
+
+    api(libs.capturable)
 }

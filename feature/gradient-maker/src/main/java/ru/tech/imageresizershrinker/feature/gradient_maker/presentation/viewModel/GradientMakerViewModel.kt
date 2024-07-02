@@ -35,8 +35,7 @@ import androidx.lifecycle.viewModelScope
 import coil.transform.Transformation
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
+import ru.tech.imageresizershrinker.core.data.utils.toCoil
 import ru.tech.imageresizershrinker.core.domain.dispatchers.DispatchersHolder
 import ru.tech.imageresizershrinker.core.domain.image.ImageCompressor
 import ru.tech.imageresizershrinker.core.domain.image.ImageGetter
@@ -47,6 +46,9 @@ import ru.tech.imageresizershrinker.core.domain.model.IntegerSize
 import ru.tech.imageresizershrinker.core.domain.saving.FileController
 import ru.tech.imageresizershrinker.core.domain.saving.model.ImageSaveTarget
 import ru.tech.imageresizershrinker.core.domain.saving.model.SaveResult
+import ru.tech.imageresizershrinker.core.domain.saving.model.onSuccess
+import ru.tech.imageresizershrinker.core.domain.transformation.GenericTransformation
+import ru.tech.imageresizershrinker.core.domain.utils.smartJob
 import ru.tech.imageresizershrinker.core.ui.utils.BaseViewModel
 import ru.tech.imageresizershrinker.core.ui.utils.helper.ImageUtils.safeAspectRatio
 import ru.tech.imageresizershrinker.core.ui.utils.state.update
@@ -54,7 +56,6 @@ import ru.tech.imageresizershrinker.feature.gradient_maker.domain.GradientMaker
 import ru.tech.imageresizershrinker.feature.gradient_maker.domain.GradientType
 import ru.tech.imageresizershrinker.feature.gradient_maker.presentation.components.UiGradientState
 import javax.inject.Inject
-import kotlin.random.Random
 
 @HiltViewModel
 class GradientMakerViewModel @Inject constructor(
@@ -131,14 +132,17 @@ class GradientMakerViewModel @Inject constructor(
     private val _left: MutableState<Int> = mutableIntStateOf(-1)
     val left by _left
 
-    private var savingJob: Job? = null
+    private var savingJob: Job? by smartJob {
+        _isSaving.update { false }
+    }
 
     fun saveBitmaps(
+        oneTimeSaveLocationUri: String?,
         onStandaloneGradientSaveResult: (SaveResult) -> Unit,
-        onResult: (List<SaveResult>, String) -> Unit
-    ) = viewModelScope.launch {
-        _left.value = -1
-        withContext(defaultDispatcher) {
+        onResult: (List<SaveResult>) -> Unit
+    ) {
+        savingJob = viewModelScope.launch(defaultDispatcher) {
+            _left.value = -1
             _isSaving.value = true
             if (uris.isEmpty()) {
                 createGradientBitmap(
@@ -160,8 +164,10 @@ class GradientMakerViewModel @Inject constructor(
                                     image = localBitmap,
                                     imageInfo = imageInfo
                                 )
-                            ), keepOriginalMetadata = false
-                        )
+                            ),
+                            keepOriginalMetadata = false,
+                            oneTimeSaveLocationUri = oneTimeSaveLocationUri
+                        ).onSuccess(::registerSave)
                     )
                 }
             } else {
@@ -176,7 +182,8 @@ class GradientMakerViewModel @Inject constructor(
                         val imageInfo = ImageInfo(
                             imageFormat = imageFormat,
                             width = localBitmap.width,
-                            height = localBitmap.height
+                            height = localBitmap.height,
+                            originalUri = uri.toString()
                         )
                         results.add(
                             fileController.save(
@@ -188,7 +195,9 @@ class GradientMakerViewModel @Inject constructor(
                                         image = localBitmap,
                                         imageInfo = imageInfo
                                     )
-                                ), keepOriginalMetadata = keepExif
+                                ),
+                                keepOriginalMetadata = keepExif,
+                                oneTimeSaveLocationUri = oneTimeSaveLocationUri
                             )
                         )
                     } ?: results.add(
@@ -197,21 +206,15 @@ class GradientMakerViewModel @Inject constructor(
 
                     _done.value += 1
                 }
-                onResult(results, fileController.savingPath)
+                onResult(results.onSuccess(::registerSave))
             }
             _isSaving.value = false
         }
-    }.also {
-        _isSaving.value = false
-        savingJob?.cancel()
-        savingJob = it
     }
 
     fun shareBitmaps(onComplete: () -> Unit) {
-        savingJob?.cancel()
-        _isSaving.value = false
-        _left.value = -1
         savingJob = viewModelScope.launch {
+            _left.value = -1
             _isSaving.value = true
             if (uris.isEmpty()) {
                 createGradientBitmap(
@@ -262,7 +265,6 @@ class GradientMakerViewModel @Inject constructor(
     }
 
     fun cancelSaving() {
-        savingJob?.cancel()
         savingJob = null
         _isSaving.value = false
         _left.value = -1
@@ -272,16 +274,19 @@ class GradientMakerViewModel @Inject constructor(
         _gradientSize.update {
             it.copy(height = value)
         }
+        registerChanges()
     }
 
     fun updateWidth(value: Int) {
         _gradientSize.update {
             it.copy(width = value)
         }
+        registerChanges()
     }
 
     fun setGradientType(gradientType: GradientType) {
         gradientState.gradientType = gradientType
+        registerChanges()
     }
 
     fun setPreviewSize(size: Size) {
@@ -290,10 +295,12 @@ class GradientMakerViewModel @Inject constructor(
 
     fun setImageFormat(imageFormat: ImageFormat) {
         _imageFormat.update { imageFormat }
+        registerChanges()
     }
 
     fun updateLinearAngle(angle: Float) {
         gradientState.linearGradientAngle = angle
+        registerChanges()
     }
 
     fun setRadialProperties(
@@ -302,14 +309,17 @@ class GradientMakerViewModel @Inject constructor(
     ) {
         gradientState.centerFriction = center
         gradientState.radiusFriction = radius
+        registerChanges()
     }
 
     fun setTileMode(tileMode: TileMode) {
         gradientState.tileMode = tileMode
+        registerChanges()
     }
 
     fun addColorStop(pair: Pair<Float, Color>) {
         gradientState.colorStops.add(pair)
+        registerChanges()
     }
 
     fun updateColorStop(
@@ -317,41 +327,42 @@ class GradientMakerViewModel @Inject constructor(
         pair: Pair<Float, Color>
     ) {
         gradientState.colorStops[index] = pair.copy()
+        registerChanges()
     }
 
     fun removeColorStop(index: Int) {
         if (gradientState.colorStops.size > 2) {
             gradientState.colorStops.removeAt(index)
+            registerChanges()
         }
     }
 
     fun setUri(
         uri: Uri,
         onError: (Throwable) -> Unit = {}
-    ) {
-        viewModelScope.launch {
-            _selectedUri.value = uri
-            _isImageLoading.value = true
-            imageGetter.getImageAsync(
-                uri = uri.toString(),
-                originalSize = false,
-                onGetImage = { imageData ->
-                    _imageAspectRatio.update {
-                        imageData.image.safeAspectRatio
-                    }
-                    _isImageLoading.value = false
-                    setImageFormat(imageData.imageInfo.imageFormat)
-                },
-                onError = {
-                    _isImageLoading.value = false
-                    onError(it)
+    ) = viewModelScope.launch {
+        _selectedUri.value = uri
+        _isImageLoading.value = true
+        imageGetter.getImageAsync(
+            uri = uri.toString(),
+            originalSize = false,
+            onGetImage = { imageData ->
+                _imageAspectRatio.update {
+                    imageData.image.safeAspectRatio
                 }
-            )
-        }
+                _isImageLoading.value = false
+                setImageFormat(imageData.imageInfo.imageFormat)
+            },
+            onError = {
+                _isImageLoading.value = false
+                onError(it)
+            }
+        )
     }
 
     fun updateGradientAlpha(value: Float) {
         _gradientAlpha.update { value }
+        registerChanges()
     }
 
     fun clearState() {
@@ -359,24 +370,23 @@ class GradientMakerViewModel @Inject constructor(
         _uris.update { emptyList() }
         _gradientAlpha.update { 1f }
         _gradientState = UiGradientState()
+        registerChangesCleared()
     }
 
-    fun updateUrisSilently(removedUri: Uri) {
-        viewModelScope.launch {
-            withContext(defaultDispatcher) {
-                if (selectedUri == removedUri) {
-                    val index = uris.indexOf(removedUri)
-                    if (index == 0) {
-                        uris.getOrNull(1)?.let(::setUri)
-                    } else {
-                        uris.getOrNull(index - 1)?.let(::setUri)
-                    }
-                }
-                _uris.update {
-                    it.toMutableList().apply {
-                        remove(removedUri)
-                    }
-                }
+    fun updateUrisSilently(
+        removedUri: Uri
+    ) = viewModelScope.launch(defaultDispatcher) {
+        if (selectedUri == removedUri) {
+            val index = uris.indexOf(removedUri)
+            if (index == 0) {
+                uris.getOrNull(1)?.let(::setUri)
+            } else {
+                uris.getOrNull(index - 1)?.let(::setUri)
+            }
+        }
+        _uris.update {
+            it.toMutableList().apply {
+                remove(removedUri)
             }
         }
     }
@@ -389,22 +399,17 @@ class GradientMakerViewModel @Inject constructor(
         uris.firstOrNull()?.let { setUri(it, onError) }
     }
 
-    fun getGradientTransformation(): Transformation = object : Transformation {
-        override val cacheKey: String
-            get() = brush.hashCode().toString()
-
-        override suspend fun transform(
-            input: Bitmap,
-            size: coil.size.Size
-        ): Bitmap = createGradientBitmap(
-            data = input,
-            useBitmapOriginalSizeIfAvailable = false
-        ) ?: input
-
-    }
+    fun getGradientTransformation(): Transformation =
+        GenericTransformation<Bitmap>(brush) { input ->
+            createGradientBitmap(
+                data = input,
+                useBitmapOriginalSizeIfAvailable = false
+            ) ?: input
+        }.toCoil()
 
     fun toggleKeepExif(value: Boolean) {
         _keepExif.update { value }
+        registerChanges()
     }
 
     fun cacheCurrentImage(onComplete: (Uri) -> Unit) {
@@ -422,12 +427,66 @@ class GradientMakerViewModel @Inject constructor(
                         imageFormat = imageFormat,
                         width = image.width,
                         height = image.height
-                    ),
-                    name = Random.nextInt().toString()
+                    )
                 )?.let { uri ->
                     onComplete(uri.toUri())
                 }
             }
+            _isSaving.value = false
+        }
+    }
+
+    fun cacheImages(
+        onComplete: (List<Uri>) -> Unit
+    ) {
+        savingJob = viewModelScope.launch {
+            val list = mutableListOf<Uri>()
+
+            _left.value = -1
+            _isSaving.value = true
+
+            if (uris.isEmpty()) {
+                createGradientBitmap(
+                    data = Unit,
+                    useBitmapOriginalSizeIfAvailable = true
+                )?.let { localBitmap ->
+                    val imageInfo = ImageInfo(
+                        imageFormat = imageFormat,
+                        width = localBitmap.width,
+                        height = localBitmap.height
+                    )
+                    shareProvider.cacheImage(
+                        image = localBitmap,
+                        imageInfo = imageInfo
+                    )?.toUri()?.let(list::add)
+                }
+            } else {
+                _done.value = 0
+                _left.value = uris.size
+                uris.forEach { uri ->
+                    createGradientBitmap(
+                        data = uri,
+                        useBitmapOriginalSizeIfAvailable = true
+                    )?.let { localBitmap ->
+                        val imageInfo = ImageInfo(
+                            imageFormat = imageFormat,
+                            width = localBitmap.width,
+                            height = localBitmap.height,
+                            originalUri = uri.toString()
+                        )
+
+                        shareProvider.cacheImage(
+                            image = localBitmap,
+                            imageInfo = imageInfo
+                        )?.toUri()?.let(list::add)
+                    }
+
+                    _done.value += 1
+                }
+            }
+            _isSaving.value = false
+
+            onComplete(list)
             _isSaving.value = false
         }
     }

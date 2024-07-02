@@ -8,6 +8,7 @@
 
 </br>
 
+
 <p align="center">
   <img alt="API" src="https://img.shields.io/badge/Api%2021+-50f270?logo=android&logoColor=black&style=for-the-badge"/></a>
   <img alt="Kotlin" src="https://img.shields.io/badge/Kotlin-a503fc?logo=kotlin&logoColor=white&style=for-the-badge"/></a>
@@ -15,7 +16,7 @@
     <img alt="material" src="https://custom-icon-badges.demolab.com/badge/material%20you-lightblue?style=for-the-badge&logoColor=333&logo=material-you"/></a>
   </br>
   </br>
- <a href=""><img src="https://tokei.rs/b1/github/t8rin/imageToolbox?category=code&color=orange&style=for-the-badge"/></a>
+<!--  <a href=""><img src="https://tokei.rs/b1/github/t8rin/imageToolbox?category=code&color=orange&style=for-the-badge"/></a> -->
   <a href="https://github.com/T8RIN/ImageToolbox/actions">
   <img alt="GitHub commits since tagged version (branch)" src="https://img.shields.io/github/commits-since/t8rin/ImageResizer/v1.0?color=palegreen&label=Commits&style=for-the-badge">
   <img alt="GitHub code size in bytes" src="https://img.shields.io/github/languages/code-size/t8rin/imageresizer?style=for-the-badge&color=37ABB5">
@@ -42,7 +43,7 @@
   </a>
 </p>
 
-<h4 align="center">Image Toolbox is an powerful picture editor, which can crop, 
+<h4 align="center">Image Toolbox is a powerful picture editor, which can crop, 
   
   apply filters, add some drawing, erase background, edit EXIF or even create PDF file</h4>
 
@@ -100,7 +101,7 @@ or click one of the badges below.
 # ✨ Features
 
 - Batch processing
-- Applying filter chains (More than 160 various filters)
+- Applying filter chains (More than 180 various filters)
 
   <details>
   <summary>Available filters</summary>
@@ -268,9 +269,34 @@ or click one of the badges below.
   - [x] Fast Gaussian Blur 2D
   - [x] Fast Gaussian Blur 3D
   - [x] Fast Gaussian Blur 4D
+  - [x] Equalize Histogram
+  - [x] Equalize Histogram HSV
+  - [x] Equalize Histogram Pixelation
+  - [x] Equalize Histogram Adaptive
+  - [x] Equalize Histogram Adaptive LUV
+  - [x] Equalize Histogram Adaptive LAB
+  - [x] Equalize Histogram Adaptive HSV
+  - [x] Equalize Histogram Adaptive HSL
+  - [x] Clahe
+  - [x] Clahe LUV
+  - [x] Clahe LAB
+  - [x] Clahe HSL
+  - [x] Clahe HSV
+  - [x] Crop To Content
+  - [x] Linear Box Blur
+  - [x] Linear Tent Blur
+  - [x] Linear Gaussian Box Blur
+  - [x] Linear Stack Blur
+  - [x] Gaussian Box Blur
+  - [x] Linear Fast Gaussian Next
+  - [x] LinearFast Gaussian
+  - [x] Linear Gaussian
 
   </details>
-
+- Custom Filters Creation by Template filters
+  - You can create filter from any filter chain
+  - Share created filters by QR code
+  - Scan filters from the app to get them on your device
 - AES-256 GCM No Padding files encryption and decryption
 - Extract Text From Images
   - 120+ languages
@@ -280,9 +306,10 @@ or click one of the badges below.
 - EXIF metadata editing/deleting
 - Loading images from internet
 - Image Stitching
+- Image Stacking
 - Background Removal
   - By drawing
-  - Automatic
+  - Automatically
 - Watermarking
   - By Text
   - By Image
@@ -299,9 +326,17 @@ or click one of the badges below.
   - Double Line Pointing Arrow
   - Outlined Rect
   - Outlined Oval
+  - Outlined Triangle
+  - Outlined Polygon
+  - Outlined Star
   - Rect
   - Oval
+  - Triangle
+  - Polygon
+  - Star
   - Lasso
+  - Text
+  - Image Brush
 - Image Resizing
   - Width changing
   - Height changing
@@ -311,31 +346,90 @@ or click one of the badges below.
   - Center Crop with
     - Background color changing
     - Background blur drawing
-  - Different Scaling Algorhytms
-    * Bilinear
-    * Nearest Neighbour
-    * Bicubic
-    * Mitchell
-    * Lanczos
-    * Catmull
-    * Hermite
-    * Spline
-    * BSpline
-    * Hann
+  - Different Scaling Algorithms
+    - Bilinear
+    - Nearest Neighbour
+    - Cubic
+    - Mitchell-Netravalli
+    - Catmull-Rom
+    - Hermite
+    - B-Spline
+    - Hann
+    - Bicubic
+    - Hamming
+    - Hanning
+    - Blackman
+    - Welch
+    - Quadric
+    - Gaussian
+    - Sphinx
+    - Bartlett
+    - Robidoux
+    - Robidoux Sharp
+    - Spline 16
+    - Spline 36
+    - Spline 64
+    - Kaiser
+    - Bartlett-Hann
+    - Box
+    - Bohman
+    - Lanczos 2
+    - Lanczos 3
+    - Lanczos 4
+    - Lanczos 2 Jinc
+    - Lanczos 3 Jinc
+    - Lanczos 4 Jinc
+    - Ewa Hanning
+    - Ewa Robidoux
+    - Ewa Blackman
+    - Ewa Quadric
+    - Ewa Robidoux Sharp
+    - Ewa Lanczos 3 Jinc
+    - Ginseng
+    - Ginseng EWA
+    - Lanczos Sharp EWA
+    - Lanczos 4 Sharpest EWA
+    - Lanczos Soft EWA
+    - Haasn Soft
+    - Lagrange 2
+    - Lagrange 3
+    - Lanczos 6
+    - Lanczos 6 Jinc
+  - Different Scale Color Spaces
+    - Linear
+    - sRGB
+    - LAB
+    - LUV
+    - Sigmoidal
+    - XYZ
+    - F32 Gamma 2.2
+    - F32 Gamma 2.8
+    - F32 Rec.709
+    - F32 sRGB
+    - LCH
 - GIF conversion
-  * GIF to images
-  * Images to GIF
+  - GIF to images
+  - Images to GIF
 - APNG conversion
-  * APNG to images
-  * Images to APNG
+  - APNG to images
+  - Images to APNG
 - JXL transcoding
-  * JXL to JPEG
-  * JPEG to JXL
+  - JXL to JPEG
+  - JPEG to JXL
 - Animated JXL conversion
-  * Images to JXL
-  * JXL to Images
-  * APNG to JXL
-  * GIF to JXL
+  - Images to JXL
+  - JXL to Images
+  - APNG to JXL
+  - GIF to JXL
+- PDF tools
+  - PDF to images
+  - Images to PDF
+  - PDF previewing
+- Document Scanning
+- QR Codes
+  - Scanning
+  - Creating
+  - Sharing as images
 - Image Shrinking
   - Quality compressing
   - Preset shrinking
@@ -390,8 +484,9 @@ or click one of the badges below.
 - Additional Features
   - Rotating
   - Flipping
-  - Previewing SVG, GIF and mostly all types of images
+  - Previewing SVG, GIF and almost all types of images
   - Saving to any specific folder
+  - Long press on save to choose one time output folder
   - Randomizing output filename
   - Embedded media picker
   
@@ -412,9 +507,9 @@ or click one of the badges below.
 - Custom app color scheme
   - Different palette styles
   - Predefined schemes
-  - Color invertion
+  - Color inversion
   - Contrast adjusting
-- Controling borders thickness
+- Controlling borders thickness
 - Enabling and disabling each existing shadow
 - Haptics controls
 - Light/Dark mode

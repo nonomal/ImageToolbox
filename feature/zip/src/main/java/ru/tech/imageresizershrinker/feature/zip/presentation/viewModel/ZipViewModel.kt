@@ -26,20 +26,21 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 import ru.tech.imageresizershrinker.core.domain.dispatchers.DispatchersHolder
 import ru.tech.imageresizershrinker.core.domain.image.ShareProvider
+import ru.tech.imageresizershrinker.core.domain.saving.FileController
+import ru.tech.imageresizershrinker.core.domain.saving.model.SaveResult
+import ru.tech.imageresizershrinker.core.domain.utils.smartJob
 import ru.tech.imageresizershrinker.core.ui.utils.BaseViewModel
 import ru.tech.imageresizershrinker.core.ui.utils.state.update
 import ru.tech.imageresizershrinker.feature.zip.domain.ZipManager
-import java.io.OutputStream
 import javax.inject.Inject
 
 @HiltViewModel
 class ZipViewModel @Inject constructor(
     private val zipManager: ZipManager,
     private val shareProvider: ShareProvider<Bitmap>,
+    private val fileController: FileController,
     dispatchersHolder: DispatchersHolder
 ) : BaseViewModel(dispatchersHolder) {
 
@@ -63,32 +64,30 @@ class ZipViewModel @Inject constructor(
         resetCalculatedData()
     }
 
-    private var savingJob: Job? = null
+    private var savingJob: Job? by smartJob {
+        _isSaving.update { false }
+    }
 
     fun startCompression(
         onComplete: (Throwable?) -> Unit
     ) {
-        _isSaving.value = false
-        savingJob?.cancel()
-        savingJob = viewModelScope.launch {
-            withContext(defaultDispatcher) {
-                _isSaving.value = true
-                if (uris.isEmpty()) {
-                    onComplete(null)
-                    return@withContext
-                }
-                runCatching {
-                    _done.update { 0 }
-                    _left.update { uris.size }
-                    _byteArray.value = zipManager.zip(
-                        files = uris.map { it.toString() },
-                        onProgress = {
-                            _done.update { it + 1 }
-                        }
-                    )
-                }.onFailure(onComplete)
-                _isSaving.value = false
+        savingJob = viewModelScope.launch(defaultDispatcher) {
+            _isSaving.value = true
+            if (uris.isEmpty()) {
+                onComplete(null)
+                return@launch
             }
+            runCatching {
+                _done.update { 0 }
+                _left.update { uris.size }
+                _byteArray.value = zipManager.zip(
+                    files = uris.map { it.toString() },
+                    onProgress = {
+                        _done.update { it + 1 }
+                    }
+                )
+            }.onFailure(onComplete)
+            _isSaving.value = false
         }
     }
 
@@ -97,18 +96,17 @@ class ZipViewModel @Inject constructor(
     }
 
     fun saveResultTo(
-        outputStream: OutputStream?,
-        onComplete: (Throwable?) -> Unit
+        uri: Uri,
+        onResult: (SaveResult) -> Unit
     ) {
-        _isSaving.value = false
-        savingJob?.cancel()
         savingJob = viewModelScope.launch(defaultDispatcher) {
             _isSaving.value = true
-            runCatching {
-                outputStream?.use {
-                    it.write(_byteArray.value)
-                }
-            }.exceptionOrNull().let(onComplete)
+            _byteArray.value?.let { byteArray ->
+                fileController.writeBytes(
+                    uri = uri.toString(),
+                    block = { it.writeBytes(byteArray) }
+                ).also(onResult).onSuccess(::registerSave)
+            }
             _isSaving.value = false
         }
     }
@@ -118,8 +116,6 @@ class ZipViewModel @Inject constructor(
         filename: String,
         onComplete: () -> Unit
     ) {
-        _isSaving.value = false
-        savingJob?.cancel()
         savingJob = viewModelScope.launch {
             _done.update { 0 }
             _left.update { 0 }

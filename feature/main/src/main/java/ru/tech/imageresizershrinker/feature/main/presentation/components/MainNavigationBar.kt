@@ -27,14 +27,17 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.systemBars
 import androidx.compose.material3.Icon
 import androidx.compose.material3.NavigationBar
+import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import ru.tech.imageresizershrinker.core.ui.utils.navigation.Screen
 import ru.tech.imageresizershrinker.core.ui.widget.modifier.drawHorizontalStroke
-import ru.tech.imageresizershrinker.core.ui.widget.other.NavigationItem
+import ru.tech.imageresizershrinker.core.ui.widget.text.marquee
 
 @Composable
 internal fun MainNavigationBar(
@@ -52,10 +55,16 @@ internal fun MainNavigationBar(
     ) {
         Screen.typedEntries.forEachIndexed { index, (_, data) ->
             val selected = index == selectedIndex
-            NavigationItem(
+            val haptics = LocalHapticFeedback.current
+            NavigationBarItem(
                 modifier = Modifier.weight(1f),
                 selected = selected,
-                onClick = { onValueChange(index) },
+                onClick = {
+                    onValueChange(index)
+                    haptics.performHapticFeedback(
+                        HapticFeedbackType.LongPress
+                    )
+                },
                 icon = {
                     AnimatedContent(
                         targetState = selected,
@@ -70,7 +79,10 @@ internal fun MainNavigationBar(
                     }
                 },
                 label = {
-                    Text(stringResource(data.first))
+                    Text(
+                        text = stringResource(data.first),
+                        modifier = Modifier.marquee()
+                    )
                 }
             )
         }

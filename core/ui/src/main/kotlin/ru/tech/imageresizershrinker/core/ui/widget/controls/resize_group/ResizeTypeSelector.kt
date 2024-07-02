@@ -60,9 +60,9 @@ import ru.tech.imageresizershrinker.core.resources.R
 import ru.tech.imageresizershrinker.core.ui.widget.buttons.EnhancedButton
 import ru.tech.imageresizershrinker.core.ui.widget.buttons.SupportingButton
 import ru.tech.imageresizershrinker.core.ui.widget.buttons.ToggleGroupButton
-import ru.tech.imageresizershrinker.core.ui.widget.controls.BackgroundColorSelector
 import ru.tech.imageresizershrinker.core.ui.widget.controls.resize_group.components.BlurRadiusSelector
 import ru.tech.imageresizershrinker.core.ui.widget.controls.resize_group.components.UseBlurredBackgroundToggle
+import ru.tech.imageresizershrinker.core.ui.widget.controls.selection.BackgroundColorSelector
 import ru.tech.imageresizershrinker.core.ui.widget.modifier.ContainerShapeDefaults
 import ru.tech.imageresizershrinker.core.ui.widget.modifier.container
 import ru.tech.imageresizershrinker.core.ui.widget.sheets.SimpleSheet
@@ -77,7 +77,7 @@ fun ResizeTypeSelector(
     value: ResizeType,
     onValueChange: (ResizeType) -> Unit
 ) {
-    val state = rememberSaveable { mutableStateOf(false) }
+    var isSheetVisible by rememberSaveable { mutableStateOf(false) }
     var canvasColor by rememberSaveable {
         mutableStateOf(Color.Transparent)
     }
@@ -124,7 +124,7 @@ fun ResizeTypeSelector(
                         Spacer(modifier = Modifier.width(8.dp))
                         SupportingButton(
                             onClick = {
-                                state.value = true
+                                isSheetVisible = true
                             }
                         )
                     }
@@ -282,14 +282,17 @@ fun ResizeTypeSelector(
                 }
             }
         },
-        visible = state,
+        visible = isSheetVisible,
+        onDismiss = {
+            isSheetVisible = it
+        },
         title = {
             TitleItem(text = stringResource(R.string.resize_type))
         },
         confirmButton = {
             EnhancedButton(
                 containerColor = MaterialTheme.colorScheme.secondaryContainer,
-                onClick = { state.value = false }
+                onClick = { isSheetVisible = false }
             ) {
                 AutoSizeText(stringResource(R.string.close))
             }
@@ -300,6 +303,7 @@ fun ResizeTypeSelector(
 private val ResizeAnchor.title: String
     @Composable
     get() = when (this) {
+        ResizeAnchor.Min -> stringResource(R.string.min)
         ResizeAnchor.Max -> stringResource(R.string.max)
         ResizeAnchor.Width -> stringResource(R.string.width, "")
         ResizeAnchor.Height -> stringResource(R.string.height, "")

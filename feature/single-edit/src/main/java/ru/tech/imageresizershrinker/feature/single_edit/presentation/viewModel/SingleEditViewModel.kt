@@ -33,7 +33,6 @@ import com.smarttoolfactory.cropper.settings.CropOutlineProperty
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import ru.tech.imageresizershrinker.core.domain.dispatchers.DispatchersHolder
 import ru.tech.imageresizershrinker.core.domain.image.ImageCompressor
@@ -46,7 +45,7 @@ import ru.tech.imageresizershrinker.core.domain.image.model.ImageData
 import ru.tech.imageresizershrinker.core.domain.image.model.ImageFormat
 import ru.tech.imageresizershrinker.core.domain.image.model.ImageInfo
 import ru.tech.imageresizershrinker.core.domain.image.model.ImageScaleMode
-import ru.tech.imageresizershrinker.core.domain.image.model.Metadata
+import ru.tech.imageresizershrinker.core.domain.image.model.MetadataTag
 import ru.tech.imageresizershrinker.core.domain.image.model.Preset
 import ru.tech.imageresizershrinker.core.domain.image.model.Quality
 import ru.tech.imageresizershrinker.core.domain.image.model.ResizeType
@@ -55,6 +54,7 @@ import ru.tech.imageresizershrinker.core.domain.saving.FileController
 import ru.tech.imageresizershrinker.core.domain.saving.model.ImageSaveTarget
 import ru.tech.imageresizershrinker.core.domain.saving.model.SaveResult
 import ru.tech.imageresizershrinker.core.domain.transformation.Transformation
+import ru.tech.imageresizershrinker.core.domain.utils.smartJob
 import ru.tech.imageresizershrinker.core.filters.domain.FilterProvider
 import ru.tech.imageresizershrinker.core.filters.presentation.model.UiFilter
 import ru.tech.imageresizershrinker.core.settings.domain.model.DomainAspectRatio
@@ -64,7 +64,6 @@ import ru.tech.imageresizershrinker.core.ui.utils.state.update
 import ru.tech.imageresizershrinker.feature.draw.presentation.components.UiPathPaint
 import ru.tech.imageresizershrinker.feature.erase_background.domain.AutoBackgroundRemover
 import javax.inject.Inject
-import kotlin.random.Random
 
 @HiltViewModel
 class SingleEditViewModel @Inject constructor(
@@ -153,7 +152,9 @@ class SingleEditViewModel @Inject constructor(
     private val _isSaving: MutableState<Boolean> = mutableStateOf(false)
     val isSaving by _isSaving
 
-    private var job: Job? = null
+    private var job: Job? by smartJob {
+        _isImageLoading.update { false }
+    }
 
     private suspend fun checkBitmapAndUpdate(resetPreset: Boolean = false) {
         if (resetPreset) {
@@ -167,11 +168,15 @@ class SingleEditViewModel @Inject constructor(
         }
     }
 
-    private var savingJob: Job? = null
+    private var savingJob: Job? by smartJob {
+        _isSaving.update { false }
+    }
+
     fun saveBitmap(
+        oneTimeSaveLocationUri: String?,
         onComplete: (result: SaveResult) -> Unit,
-    ) = viewModelScope.launch {
-        withContext(defaultDispatcher) {
+    ) {
+        savingJob = viewModelScope.launch(defaultDispatcher) {
             _isSaving.value = true
             bitmap?.let { bitmap ->
                 onComplete(
@@ -188,16 +193,13 @@ class SingleEditViewModel @Inject constructor(
                                 )
                             )
                         ),
-                        keepOriginalMetadata = true
-                    )
+                        keepOriginalMetadata = true,
+                        oneTimeSaveLocationUri = oneTimeSaveLocationUri
+                    ).onSuccess(::registerSave)
                 )
             }
             _isSaving.value = false
         }
-    }.also {
-        _isSaving.value = false
-        savingJob?.cancel()
-        savingJob = it
     }
 
     private suspend fun updatePreview(
@@ -262,6 +264,7 @@ class SingleEditViewModel @Inject constructor(
                     resetPreset = true
                 )
             }
+            registerChanges()
         }
     }
 
@@ -276,6 +279,7 @@ class SingleEditViewModel @Inject constructor(
         debouncedImageCalculation {
             checkBitmapAndUpdate()
         }
+        registerChanges()
     }
 
     fun rotateBitmapRight() {
@@ -289,6 +293,7 @@ class SingleEditViewModel @Inject constructor(
         debouncedImageCalculation {
             checkBitmapAndUpdate()
         }
+        registerChanges()
     }
 
     fun flipImage() {
@@ -296,6 +301,7 @@ class SingleEditViewModel @Inject constructor(
         debouncedImageCalculation {
             checkBitmapAndUpdate()
         }
+        registerChanges()
     }
 
     fun updateWidth(width: Int) {
@@ -306,6 +312,7 @@ class SingleEditViewModel @Inject constructor(
                     resetPreset = true
                 )
             }
+            registerChanges()
         }
     }
 
@@ -317,6 +324,7 @@ class SingleEditViewModel @Inject constructor(
                     resetPreset = true
                 )
             }
+            registerChanges()
         }
     }
 
@@ -326,6 +334,7 @@ class SingleEditViewModel @Inject constructor(
             debouncedImageCalculation {
                 checkBitmapAndUpdate()
             }
+            registerChanges()
         }
     }
 
@@ -337,6 +346,7 @@ class SingleEditViewModel @Inject constructor(
                     resetPreset = _presetSelected.value == Preset.Telegram && imageFormat != ImageFormat.Png.Lossless
                 )
             }
+            registerChanges()
         }
     }
 
@@ -352,6 +362,7 @@ class SingleEditViewModel @Inject constructor(
                     resetPreset = false
                 )
             }
+            registerChanges()
         }
     }
 
@@ -379,11 +390,9 @@ class SingleEditViewModel @Inject constructor(
     }
 
     private fun setImageData(imageData: ImageData<Bitmap, ExifInterface>) {
-        job?.cancel()
-        _isImageLoading.value = false
         job = viewModelScope.launch {
             _isImageLoading.value = true
-            updateExif(imageData.metadata)
+            _exif.update { imageData.metadata }
             val bitmap = imageData.image
             val size = bitmap.width to bitmap.height
             _originalSize.value = size.run { IntegerSize(width = first, height = second) }
@@ -403,8 +412,6 @@ class SingleEditViewModel @Inject constructor(
     }
 
     fun shareBitmap(onComplete: () -> Unit) {
-        _isSaving.value = false
-        savingJob?.cancel()
         savingJob = viewModelScope.launch {
             _isSaving.value = true
             bitmap?.let { image ->
@@ -419,15 +426,12 @@ class SingleEditViewModel @Inject constructor(
     }
 
     fun cacheCurrentImage(onComplete: (Uri) -> Unit) {
-        _isSaving.value = false
-        savingJob?.cancel()
         savingJob = viewModelScope.launch {
             _isSaving.value = true
             bitmap?.let { image ->
                 shareProvider.cacheImage(
                     image = image,
-                    imageInfo = imageInfo.copy(originalUri = uri.toString()),
-                    name = Random.nextInt().toString()
+                    imageInfo = imageInfo.copy(originalUri = uri.toString())
                 )?.let { uri ->
                     onComplete(uri.toUri())
                 }
@@ -448,33 +452,36 @@ class SingleEditViewModel @Inject constructor(
                 )
             )
             _presetSelected.value = preset
+            registerChanges()
         }
     }
 
     fun clearExif() {
         val t = _exif.value
-        Metadata.metaTags.forEach {
-            t?.setAttribute(it, null)
+        MetadataTag.entries.forEach {
+            t?.setAttribute(it.key, null)
         }
         _exif.value = t
+        registerChanges()
     }
 
     private fun updateExif(exifInterface: ExifInterface?) {
         _exif.value = exifInterface
+        registerChanges()
     }
 
-    fun removeExifTag(tag: String) {
+    fun removeExifTag(tag: MetadataTag) {
         val exifInterface = _exif.value
-        exifInterface?.setAttribute(tag, null)
+        exifInterface?.setAttribute(tag.key, null)
         updateExif(exifInterface)
     }
 
     fun updateExifByTag(
-        tag: String,
+        tag: MetadataTag,
         value: String
     ) {
         val exifInterface = _exif.value
-        exifInterface?.setAttribute(tag, value)
+        exifInterface?.setAttribute(tag.key, value)
         updateExif(exifInterface)
     }
 
@@ -482,14 +489,16 @@ class SingleEditViewModel @Inject constructor(
         domainAspectRatio: DomainAspectRatio,
         aspectRatio: AspectRatio
     ) {
-        _cropProperties.value = _cropProperties.value.copy(
-            aspectRatio = aspectRatio.takeIf {
-                domainAspectRatio != DomainAspectRatio.Original
-            } ?: _bitmap.value?.let {
-                AspectRatio(it.safeAspectRatio)
-            } ?: aspectRatio,
-            fixedAspectRatio = domainAspectRatio != DomainAspectRatio.Free
-        )
+        _cropProperties.update { properties ->
+            properties.copy(
+                aspectRatio = aspectRatio.takeIf {
+                    domainAspectRatio != DomainAspectRatio.Original
+                } ?: _bitmap.value?.let {
+                    AspectRatio(it.safeAspectRatio)
+                } ?: aspectRatio,
+                fixedAspectRatio = domainAspectRatio != DomainAspectRatio.Free
+            )
+        }
         _selectedAspectRatio.update { domainAspectRatio }
     }
 
@@ -508,10 +517,10 @@ class SingleEditViewModel @Inject constructor(
         showError: (Throwable) -> Unit
     ) {
         val list = _filterList.value.toMutableList()
-        kotlin.runCatching {
+        runCatching {
             list[index] = list[index].copy(value)
             _filterList.value = list
-        }.exceptionOrNull()?.let {
+        }.onFailure {
             showError(it)
             list[index] = list[index].newInstance()
             _filterList.value = list
@@ -621,6 +630,7 @@ class SingleEditViewModel @Inject constructor(
         debouncedImageCalculation {
             checkBitmapAndUpdate()
         }
+        registerChanges()
     }
 
     suspend fun filter(

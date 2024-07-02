@@ -28,6 +28,7 @@ import androidx.compose.material.icons.outlined.AutoAwesome
 import androidx.compose.material.icons.outlined.AutoFixHigh
 import androidx.compose.material.icons.outlined.Collections
 import androidx.compose.material.icons.outlined.Colorize
+import androidx.compose.material.icons.outlined.DocumentScanner
 import androidx.compose.material.icons.outlined.Draw
 import androidx.compose.material.icons.outlined.FilterHdr
 import androidx.compose.material.icons.outlined.FolderZip
@@ -35,6 +36,7 @@ import androidx.compose.material.icons.outlined.GifBox
 import androidx.compose.material.icons.outlined.Gradient
 import androidx.compose.material.icons.outlined.Photo
 import androidx.compose.material.icons.outlined.PictureAsPdf
+import androidx.compose.material.icons.outlined.QrCode
 import androidx.compose.material.icons.rounded.Animation
 import androidx.compose.material.icons.rounded.Compare
 import androidx.compose.material.icons.rounded.Gif
@@ -49,6 +51,7 @@ import ru.tech.imageresizershrinker.core.resources.icons.CropSmall
 import ru.tech.imageresizershrinker.core.resources.icons.Encrypted
 import ru.tech.imageresizershrinker.core.resources.icons.Exif
 import ru.tech.imageresizershrinker.core.resources.icons.ImageCombine
+import ru.tech.imageresizershrinker.core.resources.icons.ImageConvert
 import ru.tech.imageresizershrinker.core.resources.icons.ImageDownload
 import ru.tech.imageresizershrinker.core.resources.icons.ImageEdit
 import ru.tech.imageresizershrinker.core.resources.icons.ImageLimit
@@ -59,6 +62,7 @@ import ru.tech.imageresizershrinker.core.resources.icons.Jpg
 import ru.tech.imageresizershrinker.core.resources.icons.Jxl
 import ru.tech.imageresizershrinker.core.resources.icons.MultipleImageEdit
 import ru.tech.imageresizershrinker.core.resources.icons.PaletteSwatch
+import ru.tech.imageresizershrinker.core.resources.icons.Stack
 import ru.tech.imageresizershrinker.core.resources.icons.Svg
 import ru.tech.imageresizershrinker.core.resources.icons.Toolbox
 import ru.tech.imageresizershrinker.core.resources.icons.Transparency
@@ -70,6 +74,7 @@ sealed class Screen(
     @StringRes val subtitle: Int
 ) : Parcelable {
 
+    @Suppress("unused")
     val simpleName: String?
         get() = when (this) {
             is ApngTools -> "APNG_Tools"
@@ -99,11 +104,19 @@ sealed class Screen(
             is SingleEdit -> "Single_Edit"
             is Watermarking -> "Watermarking"
             is Zip -> "Zip"
-            is Svg -> "Svg"
+            is SvgMaker -> "Svg"
+            is FormatConversion -> "Convert"
+            is DocumentScanner -> "Document_Scanner"
+            is ScanQrCode -> "QR_Code"
+            is ImageStacking -> "Image_Stacking"
         }
 
     val icon: ImageVector?
         get() = when (this) {
+            EasterEgg,
+            Main,
+            Settings -> null
+
             is SingleEdit -> Icons.Outlined.ImageEdit
             is ApngTools -> Icons.Rounded.ApngBox
             is Cipher -> Icons.Outlined.Encrypted
@@ -128,10 +141,11 @@ sealed class Screen(
             is ResizeByBytes -> Icons.Rounded.ImageWeight
             is Watermarking -> Icons.AutoMirrored.Outlined.BrandingWatermark
             is Zip -> Icons.Outlined.FolderZip
-            is Svg -> Icons.Outlined.Svg
-            EasterEgg,
-            Main,
-            Settings -> null
+            is SvgMaker -> Icons.Outlined.Svg
+            is FormatConversion -> Icons.Outlined.ImageConvert
+            is DocumentScanner -> Icons.Outlined.DocumentScanner
+            is ScanQrCode -> Icons.Outlined.QrCode
+            is ImageStacking -> Icons.Outlined.Stack
         }
 
     data object Settings : Screen(
@@ -569,12 +583,42 @@ sealed class Screen(
         }
     }
 
-    data class Svg(
+    data class SvgMaker(
         val uris: List<Uri>? = null
     ) : Screen(
         id = 24,
         title = R.string.images_to_svg,
         subtitle = R.string.images_to_svg_sub
+    )
+
+    data class FormatConversion(
+        val uris: List<Uri>? = null
+    ) : Screen(
+        id = 25,
+        title = R.string.format_conversion,
+        subtitle = R.string.format_conversion_sub
+    )
+
+    data object DocumentScanner : Screen(
+        id = 26,
+        title = R.string.document_scanner,
+        subtitle = R.string.document_scanner_sub
+    )
+
+    data class ScanQrCode(
+        val qrCodeContent: String? = null
+    ) : Screen(
+        id = 27,
+        title = R.string.qr_code,
+        subtitle = R.string.qr_code_sub
+    )
+
+    data class ImageStacking(
+        val uris: List<Uri>? = null
+    ) : Screen(
+        id = 28,
+        title = R.string.image_stacking,
+        subtitle = R.string.image_stacking_sub
     )
 
     companion object {
@@ -583,6 +627,7 @@ sealed class Screen(
                 listOf(
                     SingleEdit(),
                     ResizeAndConvert(),
+                    FormatConversion(),
                     Crop(),
                     ResizeByBytes(),
                     LimitResize(),
@@ -596,6 +641,7 @@ sealed class Screen(
                     Draw(),
                     EraseBackground(),
                     ImageStitching(),
+                    ImageStacking(),
                     Watermarking(),
                     GradientMaker(),
                     DeleteExif(),
@@ -609,7 +655,7 @@ sealed class Screen(
                     RecognizeText(),
                     Compare(),
                     ImagePreview(),
-                    Svg(),
+                    SvgMaker(),
                     GeneratePalette(),
                     LoadNetImage(),
                 ) to Triple(
@@ -619,6 +665,8 @@ sealed class Screen(
                 ),
                 listOf(
                     PdfTools(),
+                    DocumentScanner,
+                    ScanQrCode(),
                     GifTools(),
                     JxlTools(),
                     ApngTools(),
@@ -635,6 +683,6 @@ sealed class Screen(
             typedEntries.flatMap { it.first }.sortedBy { it.id }
         }
 
-        const val FEATURES_COUNT = 38
+        const val FEATURES_COUNT = 43
     }
 }

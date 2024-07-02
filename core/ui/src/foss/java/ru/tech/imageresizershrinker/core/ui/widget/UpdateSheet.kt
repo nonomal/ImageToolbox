@@ -17,7 +17,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ProvideTextStyle
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
-import androidx.compose.runtime.MutableState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -37,13 +36,16 @@ import ru.tech.imageresizershrinker.core.ui.widget.text.TitleItem
 fun UpdateSheet(
     changelog: String,
     tag: String,
-    visible: MutableState<Boolean>
+    visible: Boolean,
+    onDismiss: () -> Unit
 ) {
     val context = LocalContext.current
 
     SimpleSheet(
-        endConfirmButtonPadding = 0.dp,
         visible = visible,
+        onDismiss = {
+            if (!it) onDismiss()
+        },
         title = {},
         dragHandle = {
             SimpleDragHandle {
