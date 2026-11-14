@@ -26,6 +26,7 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.rotate
+import androidx.compose.ui.graphics.drawscope.scale
 import androidx.compose.ui.graphics.lerp
 import com.t8rin.imagetoolbox.core.games.ArcadeBoard
 import com.t8rin.imagetoolbox.core.games.ArcadeField
@@ -42,6 +43,7 @@ import com.t8rin.imagetoolbox.core.resources.icons.Stacks
 import kotlinx.serialization.Serializable
 import kotlin.math.abs
 import kotlin.math.exp
+import kotlin.random.Random
 
 @RegisterArcadeGame
 internal data object StackGame : ArcadeGameDefinition {
@@ -162,7 +164,15 @@ private fun DrawScope.drawStackScene(run: StackRun, palette: StackPalette, path:
             altitude
         ).y + BlockHeight * run.unit
         if (lower < -2f || upper > run.height + 2f) continue
-        block(slab.x, slab.z, slab.width, slab.depth, altitude, palette.color(slab.level))
+        if (slab === run.blocks.last() && run.pulse > 0f) {
+            val pivot = run.project(slab.x + slab.width / 2f, slab.z + slab.depth / 2f, altitude)
+            val grow = 1f + run.pulse * 0.055f
+            scale(grow, grow, pivot) {
+                block(slab.x, slab.z, slab.width, slab.depth, altitude, palette.color(slab.level))
+            }
+        } else {
+            block(slab.x, slab.z, slab.width, slab.depth, altitude, palette.color(slab.level))
+        }
     }
     for (piece in run.pieces) {
         val center =
@@ -207,6 +217,18 @@ private fun DrawScope.drawStackScene(run: StackRun, palette: StackPalette, path:
             style = Stroke(run.unit * 1.5f)
         )
     }
+    for (spark in run.sparks) {
+        val center = run.project(spark.x, spark.z, spark.altitude)
+        val alpha = (spark.life / spark.maxLife).coerceIn(0f, 1f)
+        val half = run.unit * (0.9f + 0.9f * alpha)
+        face(
+            palette.light.copy(alpha = alpha * 0.85f),
+            Offset(center.x, center.y - half),
+            Offset(center.x + half, center.y),
+            Offset(center.x, center.y + half),
+            Offset(center.x - half, center.y)
+        )
+    }
 }
 
 private const val BlockHeight = 14f
@@ -238,6 +260,18 @@ private data class StackPiece(
 )
 
 @Serializable
+private data class StackSpark(
+    var x: Float,
+    var z: Float,
+    var altitude: Float,
+    val driftX: Float,
+    val driftZ: Float,
+    var velocity: Float,
+    var life: Float,
+    val maxLife: Float
+)
+
+@Serializable
 private class StackRun : ArcadeRun() {
     var x = -StackTravel
         private set
@@ -251,8 +285,11 @@ private class StackRun : ArcadeRun() {
         private set
     var missTime = 0f
         private set
+    var pulse = 0f
+        private set
     val blocks = mutableListOf<StackBlock>()
     val pieces = mutableListOf<StackPiece>()
+    val sparks = mutableListOf<StackSpark>()
     private var direction = 1
     private var perfectStreak = 0
     private var cooldown = 0f
@@ -280,10 +317,12 @@ private class StackRun : ArcadeRun() {
         cameraZ = InitialBlockWidth / 2f
         flash = 0f
         missTime = 0f
+        pulse = 0f
         direction = 1
         perfectStreak = 0
         cooldown = 0f
         pieces.clear()
+        sparks.clear()
         blocks.clear()
         blocks += StackBlock(x = 0f, width = InitialBlockWidth, level = 0, perfect = false)
     }
@@ -340,6 +379,22 @@ private class StackRun : ArcadeRun() {
             perfect = perfect
         )
         if (perfect || checkpoint) flash = 1f
+        if (perfect) {
+            pulse = 1f
+            repeat(3 + minOf(perfectStreak, 7)) {
+                val life = 0.45f + Random.nextFloat() * 0.35f
+                sparks += StackSpark(
+                    x = next.x + Random.nextFloat() * next.width,
+                    z = next.z + Random.nextFloat() * next.depth,
+                    altitude = (next.level + 1) * BlockHeight,
+                    driftX = (Random.nextFloat() - 0.5f) * 34f,
+                    driftZ = (Random.nextFloat() - 0.5f) * 34f,
+                    velocity = 42f + Random.nextFloat() * 52f,
+                    life = life,
+                    maxLife = life
+                )
+            }
+        }
         blocks += next
         // Keep enough history for taller layouts while bounding the saved run.
         if (blocks.size > 2048) blocks.subList(0, blocks.size - 2048).clear()
@@ -352,7 +407,16 @@ private class StackRun : ArcadeRun() {
 
     override fun advance(seconds: Float) {
         flash = (flash - seconds * 3f).coerceAtLeast(0f)
+        pulse = (pulse - seconds * 3.2f).coerceAtLeast(0f)
         cooldown = (cooldown - seconds).coerceAtLeast(0f)
+        for (spark in sparks) {
+            spark.velocity = (spark.velocity - 55f * seconds).coerceAtLeast(8f)
+            spark.altitude += spark.velocity * seconds
+            spark.x += spark.driftX * seconds
+            spark.z += spark.driftZ * seconds
+            spark.life -= seconds
+        }
+        sparks.removeAll { it.life <= 0f }
         val targetY = topInset + (height - topInset) * 0.44f
         val target = maxOf(
             0f, (score + 2) * BlockHeight -

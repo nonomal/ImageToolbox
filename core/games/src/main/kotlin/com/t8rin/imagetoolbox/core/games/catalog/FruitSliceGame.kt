@@ -1119,7 +1119,7 @@ private class FruitSliceRun : ArcadeRun() {
         }
         if (comboTime <= 0f) combo = 0
         combo++
-        comboTime = 0.14f
+        comboTime = 0.2f
         var points = 1
         var extra = if (fruit.explosive) 5 else 0
         if (combo >= 3) {
