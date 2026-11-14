@@ -1,6 +1,6 @@
 /*
  * ImageToolbox is an image editor for android
- * Copyright (c) 2024 T8RIN (Malik Mukhametzyanov)
+ * Copyright (c) 2026 T8RIN (Malik Mukhametzyanov)
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,9 +21,15 @@ pluginManagement {
     repositories {
         includeBuild("build-logic")
         gradlePluginPortal()
-        google()
+        google {
+            content {
+                includeGroupByRegex("com\\.android.*")
+                includeGroupByRegex("com\\.google.*")
+                includeGroupByRegex("androidx.*")
+            }
+        }
         mavenCentral()
-        maven { setUrl("https://jitpack.io") }
+        maven("https://jitpack.io") { name = "JitPack" }
     }
 }
 dependencyResolutionManagement {
@@ -31,9 +37,9 @@ dependencyResolutionManagement {
     repositories {
         google {
             content {
-                includeGroupAndSubgroups("androidx")
-                includeGroupAndSubgroups("com.android")
-                includeGroupAndSubgroups("com.google")
+                includeGroupByRegex("com\\.android.*")
+                includeGroupByRegex("com\\.google.*")
+                includeGroupByRegex("androidx.*")
             }
         }
         maven("https://androidx.dev/storage/compose-compiler/repository") {
@@ -52,24 +58,27 @@ dependencyResolutionManagement {
 }
 enableFeaturePreview("TYPESAFE_PROJECT_ACCESSORS")
 
-rootProject.name = "Image_Toolbox"
+rootProject.name = "ImageToolbox"
 
 include(":app")
 
 include(":feature:main")
+include(":feature:arcade-games")
 include(":feature:pick-color")
 include(":feature:image-stitch")
 include(":core:filters")
 include(":feature:filters")
+include(":feature:curves")
 include(":feature:draw")
 include(":feature:erase-background")
 include(":feature:single-edit")
 include(":feature:pdf-tools")
 include(":feature:resize-convert")
-include(":feature:generate-palette")
+include(":feature:palette-tools")
+include(":feature:palette-pdf")
 include(":feature:delete-exif")
 include(":feature:compare")
-include(":feature:bytes-resize")
+include(":feature:weight-resize")
 include(":feature:image-preview")
 include(":feature:cipher")
 include(":feature:limits-resize")
@@ -80,13 +89,50 @@ include(":feature:watermarking")
 include(":feature:gradient-maker")
 include(":feature:gif-tools")
 include(":feature:apng-tools")
-include(":feature:zip")
+include(":feature:archive-tools")
 include(":feature:jxl-tools")
 include(":feature:media-picker")
 include(":feature:quick-tiles")
 include(":feature:settings")
 include(":feature:easter-egg")
-include(":feature:svg")
+include(":feature:svg-maker")
+include(":feature:format-conversion")
+include(":feature:document-scanner")
+include(":feature:scan-qr-code")
+include(":feature:image-stacking")
+include(":feature:image-splitting")
+include(":feature:color-tools")
+include(":feature:webp-tools")
+include(":feature:noise-generation")
+include(":feature:texture-generation")
+include(":feature:collage-maker")
+include(":feature:libraries-info")
+include(":feature:markup-layers")
+include(":feature:base64-tools")
+include(":feature:checksum-tools")
+include(":feature:mesh-gradients")
+include(":feature:edit-exif")
+include(":feature:image-cutting")
+include(":feature:audio-cover-extractor")
+include(":feature:library-details")
+include(":feature:wallpapers-export")
+include(":feature:ascii-art")
+include(":feature:ai-tools")
+include(":feature:color-library")
+include(":feature:app-logs")
+include(":feature:shader-studio")
+include(":feature:help")
+include(":feature:assistant")
+include(":feature:usage-statistics")
+include(":feature:batch-rename")
+include(":feature:duplicate-finder")
+include(":feature:photomosaic")
+include(":feature:multi-frame-fusion")
+include(":feature:compression-lab")
+include(":feature:code-preview")
+include(":feature:screenshot-framing")
+include(":feature:fractal-generation")
+include(":feature:emoji-kitchen")
 
 include(":feature:root")
 
@@ -95,7 +141,30 @@ include(":core:resources")
 include(":core:data")
 include(":core:domain")
 include(":core:ui")
+include(":core:games")
 include(":core:di")
 include(":core:crash")
+include(":core:ksp")
+include(":core:utils")
+
+include(":lib:neural-tools")
+include(":lib:collages")
+include(":lib:ascii")
+include(":lib:opencv-tools")
+include(":lib:documentscanner")
+include(":lib:snowfall")
+include(":lib:curves")
+include(":lib:dynamic-theme")
+include(":lib:palette")
+include(":lib:modalsheet")
+include(":lib:qrose")
+include(":lib:cropper")
+include(":lib:colors")
+include(":lib:gesture")
+include(":lib:image")
+include(":lib:zoomable")
+include(":lib:fast-scroller")
+include(":lib:archive")
 
 include(":benchmark")
+include(":instrumentation-tests")

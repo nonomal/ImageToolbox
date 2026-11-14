@@ -1,6 +1,6 @@
 /*
  * ImageToolbox is an image editor for android
- * Copyright (c) 2024 T8RIN (Malik Mukhametzyanov)
+ * Copyright (c) 2026 T8RIN (Malik Mukhametzyanov)
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,19 +17,21 @@
 
 @file:Suppress("UnstableApiUsage")
 
+import org.jetbrains.kotlin.gradle.dsl.JvmTarget
+
+
 plugins {
     id("com.android.test")
-    id("org.jetbrains.kotlin.android")
     id("androidx.baselineprofile")
 }
 
 android {
-    namespace = "ru.tech.imageresizershrinker.benchmark"
+    namespace = "com.t8rin.imagetoolbox.benchmark"
     compileSdk = libs.versions.androidCompileSdk.get().toIntOrNull()
 
     defaultConfig {
-        minSdk = 28
-        targetSdk = libs.versions.androidCompileSdk.get().toIntOrNull()
+        minSdk = 23
+        targetSdk = libs.versions.androidTargetSdk.get().toIntOrNull()
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -39,18 +41,9 @@ android {
         targetCompatibility = JavaVersion.toVersion(libs.versions.jvmTarget.get())
     }
 
-    kotlinOptions {
-        jvmTarget = libs.versions.jvmTarget.get()
-    }
-
-    buildTypes {
-        // This benchmark buildType is used for benchmarking, and should function like your
-        // release build (for example, with minification on). It"s signed with a debug key
-        // for easy local/CI testing.
-        create("benchmark") {
-            isDebuggable = true
-            signingConfig = getByName("debug").signingConfig
-            matchingFallbacks += listOf("release")
+    kotlin {
+        compilerOptions {
+            jvmTarget.set(JvmTarget.fromTarget(libs.versions.jvmTarget.get()))
         }
     }
 
@@ -64,15 +57,13 @@ android {
     experimentalProperties["android.experimental.self-instrumenting"] = true
 }
 
+baselineProfile {
+    useConnectedDevices = true
+}
+
 dependencies {
     implementation(libs.androidx.test.ext.junit)
     implementation(libs.espresso)
     implementation(libs.uiautomator)
     implementation(libs.benchmark.macro.junit4)
-}
-
-androidComponents {
-    beforeVariants(selector().all()) {
-        it.enable = it.buildType == "benchmark"
-    }
 }

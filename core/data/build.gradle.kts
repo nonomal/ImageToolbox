@@ -1,6 +1,6 @@
 /*
  * ImageToolbox is an image editor for android
- * Copyright (c) 2024 T8RIN (Malik Mukhametzyanov)
+ * Copyright (c) 2026 T8RIN (Malik Mukhametzyanov)
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,31 +20,47 @@ plugins {
     alias(libs.plugins.image.toolbox.hilt)
 }
 
-android.namespace = "ru.tech.imageresizershrinker.core.data"
+android.namespace = "com.t8rin.imagetoolbox.core.data"
 
 dependencies {
     api(libs.coil)
-    api(libs.coilCompose)
-    api(libs.coilGif)
-    api(libs.coilSvg)
+    implementation(libs.coilNetwork)
+    api(libs.ktor)
+    api(libs.ktor.logging)
+    implementation(libs.coilGif)
+    implementation(libs.coilSvg)
+    implementation(libs.coil.resvg)
+    implementation(libs.trickle)
+
+    implementation(libs.androidx.compose.ui.graphics)
+
     api(libs.datastore.preferences.android)
+    api(libs.datastore.core.android)
 
-    api(libs.avif.coder.coil) {
-        exclude(module = "com.github.awxkee:avif-coder")
-    }
-    api(libs.avif.coder)
-    api(libs.jxl.coder.coil) {
-        exclude(module = "com.github.awxkee:jxl-coder")
-    }
-    api(libs.jxl.coder)
-    api(libs.aire)
+    implementation(libs.avif.coder)
+    implementation(libs.jxl.coder)
+    implementation(libs.jixel.coder)
 
-    api(libs.androidx.exifinterface)
+    implementation(libs.aire)
+    implementation(libs.jpegli.coder)
+
+    implementation(libs.moshi)
+    implementation(libs.moshi.adapters)
+
     api(libs.androidx.documentfile)
 
-    api(libs.tesseract)
-
-    implementation(libs.imageToolboxLibs)
+    implementation(libs.toolbox.gifConverter)
+    implementation(libs.toolbox.exif)
+    implementation(libs.toolbox.rawCoder)
+    implementation(libs.toolbox.tiffCoder)
+    implementation(libs.toolbox.qoiCoder)
+    implementation(libs.toolbox.jp2decoder)
+    implementation(libs.toolbox.awebp)
+    implementation(libs.toolbox.psd)
+    implementation(libs.toolbox.apng)
+    implementation(libs.toolbox.djvuCoder)
+    implementation(libs.pdfbox)
+    implementation(libs.trickle)
 
     implementation(projects.core.domain)
     implementation(projects.core.resources)
@@ -53,4 +69,5 @@ dependencies {
 
     implementation(projects.core.settings)
     implementation(projects.core.di)
+    api(projects.core.utils)
 }

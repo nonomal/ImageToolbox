@@ -9,3 +9,7 @@
 .cxx
 /.idea
 /libs/nQuant/build
+/.kotlin/errors/
+/.kotlin
+/scripts/
+/outputs/

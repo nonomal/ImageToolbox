@@ -21,4 +21,8 @@ plugins {
     alias(libs.plugins.image.toolbox.hilt)
 }
 
-android.namespace = "ru.tech.imageresizershrinker.feature.quick_tiles"
+android.namespace = "com.t8rin.imagetoolbox.feature.quick_tiles"
+
+dependencies {
+    implementation(projects.feature.eraseBackground)
+}

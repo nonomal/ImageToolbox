@@ -1,6 +1,6 @@
 /*
  * ImageToolbox is an image editor for android
- * Copyright (c) 2024 T8RIN (Malik Mukhametzyanov)
+ * Copyright (c) 2026 T8RIN (Malik Mukhametzyanov)
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -33,6 +33,26 @@ buildscript {
         classpath(libs.firebase.crashlytics.gradle)
         classpath(libs.baselineprofile.gradle)
         classpath(libs.detekt.gradle)
+        classpath(libs.aboutlibraries.gradle)
+        classpath(libs.compose.compiler.gradle)
+    }
+}
+
+allprojects {
+    configurations.configureEach {
+        resolutionStrategy.dependencySubstitution {
+            substitute(module("com.caverock:androidsvg-aar:1.4"))
+                .using(module("com.github.deckerst:androidsvg:cc9d59a88f"))
+
+            listOf(
+                "org.bouncycastle:bcpkix",
+                "org.bouncycastle:bcprov",
+                "org.bouncycastle:bcutil"
+            ).forEach { dependency ->
+                substitute(module("${dependency}-jdk15to18"))
+                    .using(module("${dependency}-jdk18on:${libs.versions.bouncycastle.get()}"))
+            }
+        }
     }
 }
 

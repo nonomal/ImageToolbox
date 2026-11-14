@@ -1,6 +1,6 @@
 /*
  * ImageToolbox is an image editor for android
- * Copyright (c) 2024 T8RIN (Malik Mukhametzyanov)
+ * Copyright (c) 2026 T8RIN (Malik Mukhametzyanov)
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,24 +19,47 @@ package com.t8rin.imagetoolbox
 
 import com.android.build.api.dsl.CommonExtension
 import org.gradle.api.Project
+import org.gradle.kotlin.dsl.configure
+import org.gradle.kotlin.dsl.dependencies
+import org.jetbrains.kotlin.compose.compiler.gradle.ComposeCompilerGradlePluginExtension
+import org.jetbrains.kotlin.gradle.dsl.KotlinAndroidProjectExtension
 
 internal fun Project.configureCompose(
-    commonExtension: CommonExtension<*, *, *, *, *, *>,
+    commonExtension: CommonExtension
 ) {
     commonExtension.apply {
-        buildFeatures {
+        buildFeatures.apply {
             compose = true
         }
 
-        composeOptions {
-            kotlinCompilerExtensionVersion = libs.findVersion("compose.compiler").get().toString()
+        dependencies {
+            implementation(libs.androidx.material3)
+            implementation(libs.window.sizeclass)
+            implementation(libs.androidx.material)
+            implementation(libs.compose.animation)
+            implementation(libs.compose.preview)
+            debugImplementation(libs.compose.tooling)
         }
-        kotlinOptions {
-            freeCompilerArgs += listOf(
-                "-P",
-                "plugin:androidx.compose.compiler.plugins.kotlin:stabilityConfigurationPath=" +
-                        "${project.rootProject.projectDir.absolutePath}/compose_compiler_config.conf"
-            )
-        }
+    }
+
+    extensions.configure<KotlinAndroidProjectExtension> {
+        compilerOptions.optIn.addAll(
+            "androidx.compose.material3.ExperimentalMaterial3Api",
+            "androidx.compose.material3.ExperimentalMaterial3ExpressiveApi",
+            "androidx.compose.material3.windowsizeclass.ExperimentalMaterial3WindowSizeClassApi",
+            "androidx.compose.animation.ExperimentalAnimationApi",
+            "androidx.compose.foundation.ExperimentalFoundationApi",
+            "androidx.compose.foundation.layout.ExperimentalLayoutApi",
+            "androidx.compose.ui.unit.ExperimentalUnitApi",
+            "androidx.compose.material.ExperimentalMaterialApi",
+            "androidx.compose.ui.ExperimentalComposeUiApi",
+            "androidx.compose.ui.text.ExperimentalTextApi"
+        )
+    }
+
+    extensions.configure<ComposeCompilerGradlePluginExtension> {
+        stabilityConfigurationFiles.addAll(
+            rootProject.layout.projectDirectory.file("compose_compiler_config.conf")
+        )
     }
 }

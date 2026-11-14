@@ -1,6 +1,6 @@
 /*
  * ImageToolbox is an image editor for android
- * Copyright (c) 2024 T8RIN (Malik Mukhametzyanov)
+ * Copyright (c) 2026 T8RIN (Malik Mukhametzyanov)
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,32 +17,34 @@
 
 @file:Suppress("UnstableApiUsage")
 
-import org.jetbrains.kotlin.gradle.plugin.mpp.pm20.util.archivesName
+import com.android.build.api.artifact.SingleArtifact
+import com.t8rin.imagetoolbox.OptimizeReleaseApksTask
 
 plugins {
-    id("com.android.application")
-    id("org.jetbrains.kotlin.android")
-    id("kotlin-parcelize")
-    id("kotlin-kapt")
-    id("com.google.dagger.hilt.android")
-    id("com.google.gms.google-services")
-    id("com.google.firebase.crashlytics")
+    alias(libs.plugins.image.toolbox.application)
+    alias(libs.plugins.image.toolbox.hilt)
+    id("androidx.baselineprofile")
 }
 
 android {
-    var isFoss = false
+    val supportedAbi = arrayOf("armeabi-v7a", "arm64-v8a", "x86_64")
 
-    namespace = "ru.tech.imageresizershrinker"
-    compileSdk = libs.versions.androidCompileSdk.get().toIntOrNull()
+    namespace = "com.t8rin.imagetoolbox"
 
     defaultConfig {
-        applicationId = "ru.tech.imageresizershrinker"
-        minSdk = libs.versions.androidMinSdk.get().toIntOrNull()
-        targetSdk = libs.versions.androidTargetSdk.get().toIntOrNull()
-        versionCode = libs.versions.versionCode.get().toIntOrNull()
-        versionName = libs.versions.versionName.get()
+        vectorDrawables.useSupportLibrary = true
 
-        archivesName.set("image-toolbox-$versionName${if (isFoss) "-foss" else ""}")
+        //Maintained for compatibility with old version
+        applicationId = "ru.tech.imageresizershrinker"
+
+        versionCode = libs.versions.versionCode.get().toIntOrNull()
+        versionName = System.getenv("VERSION_NAME") ?: libs.versions.versionName.get()
+
+        ndk {
+            abiFilters.clear()
+            //noinspection ChromeOsAbiSupport
+            abiFilters += supportedAbi.toSet()
+        }
     }
 
     androidResources {
@@ -54,7 +56,7 @@ android {
     productFlavors {
         create("foss") {
             dimension = "app"
-            isFoss = true
+            versionNameSuffix = "-foss"
             extra.set("gmsEnabled", false)
         }
         create("market") {
@@ -64,6 +66,11 @@ android {
     }
 
     buildTypes {
+        debug {
+            applicationIdSuffix = ".debug"
+            resValue("string", "app_launcher_name", "Image Toolbox DEBUG")
+            resValue("string", "file_provider", "com.t8rin.imagetoolbox.fileprovider.debug")
+        }
         release {
             isMinifyEnabled = true
             isShrinkResources = true
@@ -71,88 +78,143 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
+            resValue("string", "app_launcher_name", "Image Toolbox")
+            resValue("string", "file_provider", "com.t8rin.imagetoolbox.fileprovider")
         }
         create("benchmark") {
             initWith(buildTypes.getByName("release"))
             signingConfig = signingConfigs.getByName("debug")
             matchingFallbacks += listOf("release")
-            isMinifyEnabled = false
-            isShrinkResources = false
         }
-    }
-
-    val javaVersion = JavaVersion.toVersion(libs.versions.jvmTarget.get())
-
-    compileOptions {
-        sourceCompatibility = javaVersion
-        targetCompatibility = javaVersion
-        isCoreLibraryDesugaringEnabled = true
-    }
-
-    kotlinOptions {
-        jvmTarget = javaVersion.toString()
-    }
-
-    composeOptions {
-        kotlinCompilerExtensionVersion = libs.versions.compose.compiler.get()
-    }
-
-    buildFeatures {
-        compose = true
     }
 
     splits {
         abi {
-            isEnable = true
+            // Detect app bundle and conditionally disable split abis
+            // This is needed due to a "Sequence contains more than one matching element" error
+            // present since AGP 8.9.0, for more info see:
+            // https://issuetracker.google.com/issues/402800800
+
+            // AppBundle tasks usually contain "bundle" in their name
+            //noinspection WrongGradleMethod
+            val isBuildingBundle =
+                gradle.startParameter.taskNames.any { it.lowercase().contains("bundle") }
+
+            // Disable split abis when building appBundle
+            isEnable = !isBuildingBundle
             reset()
-            include("armeabi-v7a", "arm64-v8a", "x86_64")
+            //noinspection ChromeOsAbiSupport
+            include(*supportedAbi)
             isUniversalApk = true
         }
     }
+
+    lint {
+        disable += "Instantiatable"
+    }
+
     packaging {
         jniLibs {
+            keepDebugSymbols.add("**/*.so")
             pickFirsts.add("lib/*/libcoder.so")
+            pickFirsts.add("**/libdatstore_shared_counter.so")
+            useLegacyPackaging = true
         }
+        resources {
+            excludes += "META-INF/"
+            excludes += "META-INF/LICENSE.md"
+            excludes += "kotlin/"
+            excludes += "org/"
+            excludes += ".properties"
+            excludes += ".bin"
+            excludes += "META-INF/versions/9/OSGI-INF/MANIFEST.MF"
+        }
+    }
+
+    buildFeatures {
+        resValues = true
     }
 }
 
+base {
+    archivesName = "image-toolbox-${android.defaultConfig.versionName}"
+}
+
+aboutLibraries {
+    export.excludeFields.addAll("generated")
+}
+
 dependencies {
-    coreLibraryDesugaring(libs.desugaring)
-
-    implementation(libs.hilt)
-    kapt(libs.dagger.hilt.compiler)
-
-    implementation(libs.androidx.material3)
-    implementation(libs.androidx.material3.window.sizeclass)
-    implementation(libs.androidx.material.icons.extended)
-    implementation(libs.androidx.material)
-
-    implementation(projects.core.domain)
-    implementation(projects.core.ui)
-    implementation(projects.core.data)
-    implementation(projects.core.resources)
-    implementation(projects.core.settings)
-    implementation(projects.core.filters)
-    implementation(projects.core.crash)
+    debugImplementation(libs.compose.ui.test.manifest)
+    baselineProfile(project(":benchmark"))
 
     implementation(projects.feature.root)
     implementation(projects.feature.mediaPicker)
     implementation(projects.feature.quickTiles)
+
+    implementation(projects.lib.opencvTools)
+    implementation(projects.lib.neuralTools)
+    implementation(projects.lib.collages)
+
+    implementation(libs.bouncycastle.pkix)
+    implementation(libs.bouncycastle.provider)
+    implementation(libs.pdfbox)
+
+    "marketImplementation"(libs.quickie.bundled)
+    "fossImplementation"(libs.quickie.foss)
 }
 
+baselineProfile {
+    automaticGenerationDuringBuild = false
+    dexLayoutOptimization = true
+    mergeIntoMain = true
+}
 
-afterEvaluate {
-    android.productFlavors.forEach { flavor ->
-        tasks.matching { task ->
-            listOf("GoogleServices", "Crashlytics").any {
-                task.name.contains(it)
-            }.and(
-                task.name.contains(
-                    flavor.name.replaceFirstChar(Char::uppercase)
-                )
+androidComponents {
+    onVariants(selector().withBuildType("release")) { variant ->
+        variant.packaging.jniLibs.keepDebugSymbols.set(emptySet())
+        val buildToolsVersion = android.buildToolsVersion
+        val executable = if (System.getProperty("os.name").startsWith("Windows")) {
+            "zipalign.exe"
+        } else {
+            "zipalign"
+        }
+
+        val optimizeApks = tasks.register<OptimizeReleaseApksTask>(
+            "optimize${variant.name.replaceFirstChar(Char::uppercase)}Apks"
+        ) {
+            description = "Compresses and aligns unsigned ${variant.name} APKs before signing."
+            zipalign.set(sdkComponents.sdkDirectory.map { sdk ->
+                sdk.file("build-tools/$buildToolsVersion/$executable")
+            })
+            outputDirectory.set(layout.buildDirectory.dir("outputs/apk/${variant.flavorName}/release"))
+        }
+        val request = variant.artifacts.use(optimizeApks)
+            .wiredWithDirectories(
+                OptimizeReleaseApksTask::inputDirectory,
+                OptimizeReleaseApksTask::outputDirectory
             )
-        }.forEach { task ->
-            task.enabled = flavor.extra.get("gmsEnabled") == true
+            .toTransformMany(SingleArtifact.APK)
+        optimizeApks.configure { transformationRequest.set(request) }
+    }
+
+    beforeVariants(selector().all()) { variantBuilder ->
+        val flavorName = variantBuilder.productFlavors.firstOrNull()?.second.orEmpty()
+        val flavorCap = flavorName.replaceFirstChar(Char::uppercase)
+
+        val gmsEnabled = android.productFlavors
+            .findByName(flavorName)
+            ?.extra
+            ?.get("gmsEnabled") == true
+
+        tasks.configureEach {
+            val isTargetTask = listOf("GoogleServices", "Crashlytics").any { marker ->
+                name.contains(marker)
+            } && name.contains(flavorCap)
+
+            if (isTargetTask) {
+                enabled = gmsEnabled
+            }
         }
     }
 }

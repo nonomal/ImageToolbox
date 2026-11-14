@@ -1,6 +1,6 @@
 /*
  * ImageToolbox is an image editor for android
- * Copyright (c) 2024 T8RIN (Malik Mukhametzyanov)
+ * Copyright (c) 2026 T8RIN (Malik Mukhametzyanov)
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,10 +17,82 @@
 
 package com.t8rin.imagetoolbox
 
+import org.gradle.accessors.dm.LibrariesForLibs
 import org.gradle.api.Project
-import org.gradle.api.artifacts.VersionCatalog
-import org.gradle.api.artifacts.VersionCatalogsExtension
-import org.gradle.kotlin.dsl.getByType
+import org.gradle.api.artifacts.MinimalExternalModuleDependency
+import org.gradle.api.artifacts.ProjectDependency
+import org.gradle.api.provider.Provider
+import org.gradle.kotlin.dsl.DependencyHandlerScope
+import org.gradle.kotlin.dsl.the
 
 val Project.libs
-    get(): VersionCatalog = extensions.getByType<VersionCatalogsExtension>().named("libs")
+    get(): LibrariesForLibs = the<LibrariesForLibs>()
+
+val Project.projects
+    get(): Projects = object : Projects, ProjectHolder {
+        override fun project(path: String): ProjectLibrary =
+            dependencyFactory.createProjectDependency(path)
+    }
+
+val Projects.core
+    get(): CoreProjects = object : CoreProjects, ProjectHolder by this {}
+
+val CoreProjects.data
+    get(): ProjectLibrary = project(":core:data")
+
+val CoreProjects.ui
+    get(): ProjectLibrary = project(":core:ui")
+
+val CoreProjects.domain
+    get(): ProjectLibrary = project(":core:domain")
+
+val CoreProjects.resources
+    get(): ProjectLibrary = project(":core:resources")
+
+val CoreProjects.settings
+    get(): ProjectLibrary = project(":core:settings")
+
+val CoreProjects.di
+    get(): ProjectLibrary = project(":core:di")
+
+val CoreProjects.crash
+    get(): ProjectLibrary = project(":core:crash")
+
+val CoreProjects.utils
+    get(): ProjectLibrary = project(":core:utils")
+
+fun DependencyHandlerScope.debugImplementation(
+    dependency: Library
+) = add("debugImplementation", dependency)
+
+fun DependencyHandlerScope.implementation(
+    dependency: Library
+) = add("implementation", dependency)
+
+fun DependencyHandlerScope.coreLibraryDesugaring(
+    dependency: Library
+) = add("coreLibraryDesugaring", dependency)
+
+fun DependencyHandlerScope.implementation(
+    dependency: ProjectLibrary
+) = add("implementation", dependency)
+
+fun DependencyHandlerScope.ksp(
+    dependency: Library
+) = add("ksp", dependency)
+
+fun DependencyHandlerScope.detektPlugins(
+    dependency: Library
+) = add("detektPlugins", dependency)
+
+typealias Library = Provider<MinimalExternalModuleDependency>
+
+typealias ProjectLibrary = ProjectDependency
+
+interface Projects : ProjectHolder
+
+interface CoreProjects : ProjectHolder
+
+interface ProjectHolder {
+    fun project(path: String): ProjectLibrary
+}

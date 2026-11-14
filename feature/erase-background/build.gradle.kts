@@ -1,6 +1,6 @@
 /*
  * ImageToolbox is an image editor for android
- * Copyright (c) 2024 T8RIN (Malik Mukhametzyanov)
+ * Copyright (c) 2026 T8RIN (Malik Mukhametzyanov)
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,9 +22,14 @@ plugins {
     alias(libs.plugins.image.toolbox.compose)
 }
 
-android.namespace = "ru.tech.imageresizershrinker.feature.erase_background"
+android.namespace = "com.t8rin.imagetoolbox.feature.erase_background"
 
 dependencies {
+    "marketImplementation"(libs.mlkit.subject.segmentation)
     "marketImplementation"(libs.mlkit.segmentation.selfie)
+
+    implementation(projects.lib.neuralTools)
+    implementation(libs.trickle)
+    
     implementation(projects.feature.draw)
 }
